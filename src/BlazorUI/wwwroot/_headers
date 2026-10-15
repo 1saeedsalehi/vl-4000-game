@@ -1,0 +1,7 @@
+# Cloudflare Pages cache policy (see README → Deploy).
+# Framework files carry a content hash in their name, so they can be cached forever; everything else
+# (index.html, game content, the JS/CSS referenced without a fingerprint) must be revalidated on every load.
+/*
+  Cache-Control: public, max-age=0, must-revalidate
+/_framework/*
+  Cache-Control: public, max-age=31536000, immutable

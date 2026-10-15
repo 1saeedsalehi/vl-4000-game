@@ -152,10 +152,12 @@
             var renderer = new PhaserRenderer(_jsRuntime, LogicalWidth, LogicalHeight);
             _renderer = renderer;
             var devMode = new Uri(_navigation.Uri).Query.Contains("dev", StringComparison.OrdinalIgnoreCase);
+            // Per-build cache buster for the atlas (the module version id changes on every build).
+            var buildId = typeof(PlayGame).Assembly.ManifestModule.ModuleVersionId.ToString("N")[..12];
             await renderer.StartAsync(
                 "phaser",
-                _manifest.BasePath + atlas.TextureUrl,
-                _manifest.BasePath + atlas.AtlasUrl,
+                $"{_manifest.BasePath}{atlas.TextureUrl}?v={buildId}",
+                $"{_manifest.BasePath}{atlas.AtlasUrl}?v={buildId}",
                 Tick,
                 devMode ? command => _session?.ApplyDebugCommand(command) ?? "no session" : null);
 

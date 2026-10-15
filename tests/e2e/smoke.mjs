@@ -15,7 +15,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -60,7 +60,9 @@ if (!(await isUp(baseUrl))) {
   }
 }
 
-const browser = await chromium.launch({ headless: true });
+const engine = { chromium, firefox, webkit }[process.env.BROWSER || 'chromium'] || chromium;
+console.log(`browser engine: ${process.env.BROWSER || 'chromium'}`);
+const browser = await engine.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const consoleErrors = [];
 page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });

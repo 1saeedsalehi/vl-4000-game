@@ -7,6 +7,10 @@
     <AssemblyName>Videoland4000.BlazorUI</AssemblyName>
     <PublishTrimmed>false</PublishTrimmed>
     <BlazorEnableCompression>true</BlazorEnableCompression>
+    <!-- Every runtime file gets a content hash in its name (index.html uses the #[.{fingerprint}] placeholders),
+         so a CDN edge cache can never serve an old runtime file next to a new one after a deployment. -->
+    <WasmFingerprintDotnetJs>true</WasmFingerprintDotnetJs>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
   </PropertyGroup>
 
   <ItemGroup>

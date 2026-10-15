@@ -121,7 +121,13 @@ workflow (`.github/workflows/build.yml`) builds, tests and publishes on every pu
 
 Deep links such as `/play/1` work because Cloudflare Pages serves `index.html` for unknown routes
 when the site has no `404.html`. Nothing is stored server-side: the high score lives in the player's
-browser. Other free options that work the same way: Azure Static Web Apps (the repository already
+browser.
+
+Caching: every runtime file (`_framework/*`) carries a content hash in its name (`index.html` uses the
+`#[.{fingerprint}]` placeholders and `WasmFingerprintDotnetJs` is enabled), so a CDN edge can never
+serve an old runtime file next to a new one after a deployment. `wwwroot/_headers` marks those files
+immutable and everything else as must-revalidate; the sprite atlas is requested with a per-build query
+string. Other free options that work the same way: Azure Static Web Apps (the repository already
 contains `staticwebapp.config.json`), Netlify, or GitHub Pages (needs `.nojekyll`, a `404.html` copy of
 `index.html` and a matching `<base href>`).
 
