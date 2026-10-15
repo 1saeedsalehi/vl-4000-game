@@ -100,7 +100,7 @@ public class LevelTests
         var alternate = arena.Alternate!.Solids.OrderBy(r => r.Y).ThenBy(r => r.X).ToList();
 
         Assert.Equal(primary, alternate);
-        Assert.NotEqual(0, arena.OneWayPlatforms.Count);
+        Assert.NotEmpty(arena.OneWayPlatforms);
         Assert.NotEqual(arena.OneWayPlatforms, arena.Alternate.OneWayPlatforms);
     }
 
