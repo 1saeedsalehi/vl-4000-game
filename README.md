@@ -10,9 +10,8 @@ escaping into production, buffering spinners are multiplying, and authentication
 a tiny pixel-art engineer with a laptop. Collect valid tokens, repair the authentication terminal,
 reach the exit and defeat **The Infinite Loading Spinner** before the weekend is cancelled.
 
-Built on the architecture of [GameATron4000](https://github.com/amolenk/GameATron4000) by Sander
-Molenkamp (Blazor WebAssembly + Phaser), transformed from a point-and-click adventure engine into an
-arcade game. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
+A Blazor WebAssembly app with a pure C# game simulation and a Phaser 3 renderer. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how it fits together.
 
 | Title | The Login Dungeon |
 |-------|-------------------|
@@ -62,7 +61,7 @@ disables screen shake, flashes and flicker.
 
 ## Prerequisites
 
-* [.NET SDK 8.0](https://dotnet.microsoft.com/download/dotnet/8.0) (Blazor WebAssembly; no extra workloads needed)
+* [.NET SDK 10.0](https://dotnet.microsoft.com/download/dotnet/10.0) (Blazor WebAssembly; no extra workloads needed)
 * A modern desktop browser (Chrome, Edge, Firefox, Safari)
 * Optional: Python 3.9+ (stdlib only) to rebuild the sprite atlas, Node.js 18+ for the browser smoke test
 
@@ -155,7 +154,5 @@ docs/ARCHITECTURE.md  contracts: frame snapshot, input, sounds, messages, level 
 * [Phaser 3.55.2](https://phaser.io) — MIT License (bundled as `wwwroot/js/phaser.min.js`).
 * [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) by CodeMan38 — SIL Open Font License 1.1
   (`wwwroot/assets/fonts/PressStart2P-OFL.txt`).
-* Architecture inspired by GameATron4000 (Sander Molenkamp). No code, artwork or fonts from that
-  repository are included.
 * "Videoland" is a streaming service of RTL Nederland. This is a fan-made, fictional arcade game for
   colleagues; it contains no real logos, production systems, metrics or infrastructure details.

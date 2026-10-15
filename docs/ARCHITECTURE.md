@@ -4,7 +4,7 @@ This document is the single source of truth for the interfaces shared by the
 C# simulation, the JavaScript renderer, the pixel-art atlas tool and the Blazor
 UI. Keep it in sync when changing any of them.
 
-## 1. Layering (inherited from GameATron4000)
+## 1. Layering
 
 ```
 src/Core            pure C# game model: state machine, physics, entities, level parsing,

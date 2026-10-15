@@ -2,7 +2,7 @@ namespace Videoland4000.Mediator;
 
 /// <summary>
 /// In-process message bus used to decouple the Blazor UI components from the
-/// game session host (same pattern as the original GameATron4000 engine).
+/// game session host.
 /// Commands have exactly one handler, events may have many.
 /// </summary>
 public interface IMediator
