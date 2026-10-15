@@ -1,0 +1,11 @@
+global using Videoland4000;
+global using Videoland4000.Geometry;
+global using Videoland4000.Input;
+global using Videoland4000.Model;
+global using Videoland4000.Model.Levels;
+global using Videoland4000.Model.Manifest;
+global using Videoland4000.Model.Session;
+global using Videoland4000.Model.Simulation;
+global using Videoland4000.Persistence;
+global using Videoland4000.Rendering;
+global using Xunit;

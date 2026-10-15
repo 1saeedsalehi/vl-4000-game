@@ -1,0 +1,1352 @@
+/* =====================================================================
+   VIDEOLAND 4000 — SAVE THE STREAM · retro UI chrome
+   See docs/ARCHITECTURE.md §5 for the DOM structure and palette contract.
+   Sizing rule: 1 logical pixel (of the 320×180 stage) = 0.3125cqw.
+   ===================================================================== */
+
+@font-face {
+    font-family: "Press Start 2P";
+    src: url("../assets/fonts/PressStart2P-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+    font-display: block;
+}
+
+/* ---------- 1. Tokens ------------------------------------------------ */
+
+:root {
+    --vl-bg: #0b0613;
+    --vl-night: #1a0f2e;
+    --vl-purple: #3b1f6b;
+    --vl-violet: #6a2fd1;
+    --vl-magenta: #e6007e;
+    --vl-pink: #ff4fa3;
+    --vl-white: #f6f2ff;
+    --vl-light: #c9c2d6;
+    --vl-grey: #6e6684;
+    --vl-dark: #2e2940;
+    --vl-cyan: #35d6ff;
+    --vl-green: #3dff8a;
+    --vl-yellow: #ffd43b;
+    --vl-orange: #ff8a3b;
+    --vl-red: #ff3b5c;
+
+    /* derived tokens (not part of the §5 contract, UI-only) */
+    --vl-muted: #a79fbd;              /* ≥ 4.5:1 on --vl-bg, for footnotes */
+    --vl-panel: rgba(11, 6, 19, 0.80); /* semi-transparent dark panel */
+    --vl-panel-solid: rgba(11, 6, 19, 0.94);
+    --font-pixel: "Press Start 2P", "Courier New", Courier, monospace;
+    color-scheme: dark;
+}
+
+/* ---------- 2. Base ------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    background: var(--vl-bg);
+    color: var(--vl-white);
+    font-family: var(--font-pixel);
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+    display: contents;
+}
+
+img,
+canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+button {
+    font-family: inherit;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Loading screen rendered by index.html before Blazor boots. */
+#app .loading-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    background: radial-gradient(ellipse at center, var(--vl-night) 0%, var(--vl-bg) 70%);
+    text-align: center;
+    padding: 1rem;
+}
+
+#app .loading-title {
+    margin: 0;
+    font-size: clamp(0.9rem, 3.5vw, 1.6rem);
+    color: var(--vl-pink);
+    text-shadow: 0 0 12px rgba(230, 0, 126, 0.65), 2px 2px 0 var(--vl-purple);
+    letter-spacing: 0.08em;
+}
+
+#app .loading-text {
+    margin: 0;
+    font-size: clamp(0.6rem, 2vw, 0.9rem);
+    color: var(--vl-light);
+}
+
+.blink {
+    animation: vl-blink 1s steps(1, end) infinite;
+}
+
+/* Classic arcade blink that never hides the text completely (keeps prompts legible). */
+@keyframes vl-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.4; }
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    padding: 0.8rem 1.2rem 0.8rem 1rem;
+    background: var(--vl-night);
+    color: var(--vl-white);
+    border-top: 3px solid var(--vl-red);
+    font-size: 0.65rem;
+    line-height: 1.8;
+    box-shadow: 0 -4px 0 rgba(0, 0, 0, 0.5);
+}
+
+#blazor-error-ui .reload,
+#blazor-error-ui .dismiss {
+    color: var(--vl-cyan);
+    margin-left: 1rem;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.not-found {
+    margin: 2rem;
+    padding: 1.5rem;
+    font-size: 0.75rem;
+    line-height: 2;
+    color: var(--vl-light);
+    border: 2px solid var(--vl-violet);
+    text-align: center;
+}
+
+.not-found a {
+    color: var(--vl-cyan);
+}
+
+/* ---------- 3. Page & stage ---------------------------------------- */
+
+.page {
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--vl-bg);
+}
+
+.stage {
+    position: relative;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    width: min(100dvw, calc(100dvh * 16 / 9));
+    height: min(100dvh, calc(100dvw * 9 / 16));
+    container-type: size;
+    container-name: stage;
+    overflow: hidden;
+    background: var(--vl-bg);
+    /* 320 logical px == 100cqw */
+    --px: 0.3125cqw;
+    --fs-xs: calc(var(--px) * 4);
+    --fs-sm: calc(var(--px) * 5);
+    --fs-md: calc(var(--px) * 6);
+    --fs-lg: calc(var(--px) * 8);
+    --fs-xl: calc(var(--px) * 12);
+    --fs-2xl: calc(var(--px) * 18);
+    font-size: var(--fs-md);
+    line-height: 1;
+}
+
+#phaser {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--vl-bg);
+}
+
+#phaser canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    image-rendering: pixelated;
+}
+
+.overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    font-family: var(--font-pixel);
+    color: var(--vl-white);
+}
+
+.overlay-hud { z-index: 10; }
+.overlay-toasts { z-index: 20; }
+.overlay-screen { z-index: 30; }
+.overlay-touch { z-index: 40; }
+.crt-overlay { z-index: 50; }
+
+/* ---------- 4. Typography helpers ---------------------------------- */
+
+.text-xs { font-size: var(--fs-xs); }
+.text-sm { font-size: var(--fs-sm); }
+.text-md { font-size: var(--fs-md); }
+.text-lg { font-size: var(--fs-lg); }
+
+.c-pink { color: var(--vl-pink); }
+.c-cyan { color: var(--vl-cyan); }
+.c-green { color: var(--vl-green); }
+.c-yellow { color: var(--vl-yellow); }
+.c-orange { color: var(--vl-orange); }
+.c-red { color: var(--vl-red); }
+.c-light { color: var(--vl-light); }
+.c-muted { color: var(--vl-muted); }
+
+.glow-magenta {
+    color: var(--vl-pink);
+    text-shadow:
+        0 0 calc(var(--px) * 2) var(--vl-magenta),
+        0 0 calc(var(--px) * 6) rgba(230, 0, 126, 0.75),
+        calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-purple);
+}
+
+/* ---------- 5. Buttons --------------------------------------------- */
+
+.btn {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6em;
+    min-height: calc(var(--px) * 12);
+    padding: calc(var(--px) * 2.5) calc(var(--px) * 4);
+    font-family: var(--font-pixel);
+    font-size: var(--fs-sm);
+    line-height: 1;
+    text-transform: uppercase;
+    color: var(--vl-white);
+    background: var(--vl-purple);
+    border: calc(var(--px) * 1) solid var(--vl-violet);
+    border-radius: 0;
+    box-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-bg), calc(var(--px) * 2) calc(var(--px) * 2) 0 var(--vl-violet);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: transform 60ms steps(2, end);
+}
+
+.btn:hover {
+    background: var(--vl-violet);
+    color: var(--vl-white);
+}
+
+.btn:active {
+    transform: translate(calc(var(--px) * 1), calc(var(--px) * 1));
+    box-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-violet);
+}
+
+.btn:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[tabindex]:not(.panel):focus-visible {
+    outline: calc(var(--px) * 1) solid var(--vl-cyan);
+    outline-offset: calc(var(--px) * 1);
+    box-shadow: 0 0 0 calc(var(--px) * 3) rgba(53, 214, 255, 0.35);
+}
+
+/* screens receive programmatic focus (dialog pattern); no ring on the container */
+.panel:focus,
+.panel:focus-visible {
+    outline: none;
+}
+
+.btn--primary {
+    color: var(--vl-pink);
+    background: var(--vl-bg);
+    border-color: var(--vl-pink);
+    box-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-bg), calc(var(--px) * 2) calc(var(--px) * 2) 0 var(--vl-magenta);
+}
+
+.btn--primary:hover,
+.btn--primary:focus-visible {
+    background: #b8005f; /* darker magenta: white text stays above 4.5:1 */
+    color: var(--vl-white);
+}
+
+.btn--primary.blink:hover,
+.btn--primary.blink:focus-visible {
+    animation: none;
+}
+
+.btn--small {
+    min-height: calc(var(--px) * 10);
+    padding: calc(var(--px) * 2) calc(var(--px) * 3);
+    font-size: var(--fs-xs);
+}
+
+.btn--danger {
+    border-color: var(--vl-red);
+}
+
+.btn[aria-pressed="true"] {
+    color: var(--vl-green);
+}
+
+.btn[aria-pressed="false"] {
+    color: var(--vl-light);
+}
+
+.btn-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: calc(var(--px) * 3) calc(var(--px) * 4);
+}
+
+.btn-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: calc(var(--px) * 3);
+    width: min(100%, calc(var(--px) * 150));
+    margin-inline: auto;
+}
+
+/* ---------- 6. Screens (boot / title / intro / pause / over / win) -- */
+
+.overlay-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(var(--px) * 6) calc(var(--px) * 8);
+    animation: vl-screen-in 320ms steps(8, end) both;
+}
+
+@keyframes vl-screen-in {
+    from {
+        opacity: 0.2;
+        clip-path: inset(0 0 100% 0);
+    }
+    to {
+        opacity: 1;
+        clip-path: inset(0 0 0 0);
+    }
+}
+
+.panel {
+    pointer-events: auto;
+    position: relative;
+    width: min(100%, calc(var(--px) * 272));
+    max-height: 100%;
+    overflow: auto;
+    padding: calc(var(--px) * 6) calc(var(--px) * 8);
+    background: var(--vl-panel);
+    border: calc(var(--px) * 1) solid var(--vl-violet);
+    box-shadow:
+        inset 0 0 0 calc(var(--px) * 1) var(--vl-bg),
+        calc(var(--px) * 2) calc(var(--px) * 2) 0 rgba(0, 0, 0, 0.6),
+        0 0 calc(var(--px) * 10) rgba(106, 47, 209, 0.35);
+    text-align: center;
+    scrollbar-width: thin;
+}
+
+.panel--solid {
+    background: var(--vl-panel-solid);
+}
+
+.panel--wide {
+    width: min(100%, calc(var(--px) * 296));
+}
+
+.panel--narrow {
+    width: min(100%, calc(var(--px) * 200));
+}
+
+/* zero specificity so the per-screen spacing classes below win */
+.panel :where(h1, h2, p) {
+    margin: 0;
+}
+
+.panel-title {
+    font-size: var(--fs-lg);
+    line-height: 1.25;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.panel-subtitle {
+    margin-top: calc(var(--px) * 2);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    color: var(--vl-light);
+}
+
+.panel-rule {
+    width: 100%;
+    height: calc(var(--px) * 1);
+    margin: calc(var(--px) * 4) 0;
+    background: repeating-linear-gradient(90deg, var(--vl-violet) 0 calc(var(--px) * 3), transparent calc(var(--px) * 3) calc(var(--px) * 5));
+}
+
+.panel-lines {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--px) * 2.5);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    color: var(--vl-light);
+}
+
+.panel-footnote {
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-xs);
+    line-height: 1.6;
+    color: var(--vl-muted);
+}
+
+/* -- boot -- */
+
+.boot {
+    pointer-events: auto;
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: calc(var(--px) * 12) calc(var(--px) * 16);
+    background: var(--vl-bg);
+    cursor: pointer;
+}
+
+.boot-text {
+    margin: 0;
+    font-family: var(--font-pixel);
+    font-size: var(--fs-md);
+    line-height: 2;
+    color: var(--vl-light);
+    text-align: left;
+}
+
+.boot-line {
+    display: block;
+    overflow: hidden;
+    white-space: pre;
+    animation: vl-typewriter 180ms steps(28, end) both;
+}
+
+.boot:focus-visible {
+    outline: none;
+    box-shadow: none;
+}
+
+@keyframes vl-typewriter {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+}
+
+.boot-line--header { color: var(--vl-pink); }
+.boot-line--rule { color: var(--vl-violet); }
+.boot-line--warn { color: var(--vl-yellow); }
+.boot-line--start { color: var(--vl-white); }
+.boot-line .ok { color: var(--vl-green); }
+
+.boot-cursor {
+    display: inline-block;
+    width: 0.9em;
+    height: 1em;
+    vertical-align: -0.15em;
+    background: var(--vl-pink);
+    animation: vl-blink 0.8s steps(1, end) infinite;
+}
+
+.boot-hint {
+    position: absolute;
+    right: calc(var(--px) * 8);
+    bottom: calc(var(--px) * 6);
+    margin: 0;
+    font-size: var(--fs-xs);
+    color: var(--vl-muted);
+}
+
+/* -- title -- */
+
+.title {
+    padding-top: calc(var(--px) * 8);
+    padding-bottom: calc(var(--px) * 5);
+}
+
+.title-start:hover .blink,
+.title-start:focus-visible .blink {
+    animation: none;
+}
+
+.title-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--px) * 3);
+    margin: 0;
+}
+
+.title-logo-main {
+    font-size: var(--fs-2xl);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.title-logo-sub {
+    font-size: var(--fs-lg);
+    line-height: 1;
+    color: var(--vl-cyan);
+    letter-spacing: 0.12em;
+    text-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-purple);
+}
+
+.title-tagline {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--px) * 1.5);
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-xs);
+    line-height: 1.3;
+    color: var(--vl-light);
+}
+
+.title-tagline span:last-child {
+    color: var(--vl-yellow);
+}
+
+.title-start {
+    margin-top: calc(var(--px) * 5);
+    font-size: var(--fs-md);
+    padding-inline: calc(var(--px) * 6);
+}
+
+.title-highscore {
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-sm);
+    color: var(--vl-yellow);
+}
+
+.controls {
+    width: auto;
+    margin: calc(var(--px) * 4) auto 0;
+    border-collapse: collapse;
+    font-size: var(--fs-xs);
+    line-height: 1.3;
+    color: var(--vl-light);
+    text-align: left;
+}
+
+.controls caption {
+    margin-bottom: calc(var(--px) * 2);
+    font-size: var(--fs-xs);
+    color: var(--vl-muted);
+    text-align: center;
+}
+
+.controls td {
+    padding: calc(var(--px) * 0.75) calc(var(--px) * 1);
+    vertical-align: top;
+}
+
+.controls .key {
+    color: var(--vl-cyan);
+    white-space: nowrap;
+}
+
+.controls .action {
+    color: var(--vl-light);
+    padding-right: calc(var(--px) * 4);
+}
+
+.title-toggles {
+    margin-top: calc(var(--px) * 4);
+}
+
+.title-credit {
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-xs);
+    color: var(--vl-muted);
+}
+
+/* -- level intro -- */
+
+.intro-level {
+    font-size: var(--fs-xs);
+    letter-spacing: 0.2em;
+    color: var(--vl-pink);
+}
+
+.intro-name {
+    margin-top: calc(var(--px) * 3);
+    font-size: var(--fs-lg);
+    line-height: 1.25;
+    color: var(--vl-white);
+    text-transform: uppercase;
+}
+
+.intro-label {
+    margin-top: calc(var(--px) * 5);
+    font-size: var(--fs-xs);
+    letter-spacing: 0.15em;
+    color: var(--vl-cyan);
+}
+
+.intro-objective {
+    margin-top: calc(var(--px) * 2);
+}
+
+.intro-actions {
+    margin-top: calc(var(--px) * 6);
+}
+
+/* -- pause -- */
+
+.pause .panel-title {
+    color: var(--vl-cyan);
+    text-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-purple);
+}
+
+.pause .panel-subtitle {
+    color: var(--vl-pink);
+    letter-spacing: 0.1em;
+}
+
+.pause .btn-stack {
+    margin-top: calc(var(--px) * 5);
+}
+
+/* -- game over -- */
+
+.gameover .panel-title {
+    color: var(--vl-red);
+    text-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 #4a0a16, 0 0 calc(var(--px) * 6) rgba(255, 59, 92, 0.45);
+}
+
+.panel.gameover {
+    border-color: var(--vl-red);
+    box-shadow:
+        inset 0 0 0 calc(var(--px) * 1) var(--vl-bg),
+        calc(var(--px) * 2) calc(var(--px) * 2) 0 rgba(0, 0, 0, 0.6),
+        0 0 calc(var(--px) * 10) rgba(255, 59, 92, 0.25);
+}
+
+.gameover-score {
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-md);
+    color: var(--vl-yellow);
+}
+
+.gameover .btn-row {
+    margin-top: calc(var(--px) * 5);
+}
+
+/* -- victory -- */
+
+.panel.victory {
+    border-color: var(--vl-green);
+    box-shadow:
+        inset 0 0 0 calc(var(--px) * 1) var(--vl-bg),
+        calc(var(--px) * 2) calc(var(--px) * 2) 0 rgba(0, 0, 0, 0.6),
+        0 0 calc(var(--px) * 10) rgba(61, 255, 138, 0.25);
+}
+
+.victory .panel-title {
+    color: var(--vl-green);
+    text-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 #0b4a25;
+}
+
+.victory-lines {
+    margin-top: calc(var(--px) * 4);
+}
+
+.victory-lines .line {
+    opacity: 0;
+    animation: vl-rise-in 260ms steps(4, end) forwards;
+    animation-delay: calc(var(--i, 0) * 240ms);
+}
+
+@keyframes vl-rise-in {
+    from {
+        opacity: 0;
+        transform: translateY(calc(var(--px) * 3));
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.victory-lines .line--shout {
+    margin-top: calc(var(--px) * 2);
+    color: var(--vl-cyan);
+}
+
+.victory-lines .line--weekend {
+    color: var(--vl-yellow);
+}
+
+.victory-lines--instant .line {
+    opacity: 1;
+    animation: none;
+}
+
+.victory-scores {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: calc(var(--px) * 2) calc(var(--px) * 6);
+    margin-top: calc(var(--px) * 4);
+    font-size: var(--fs-sm);
+    color: var(--vl-white);
+}
+
+.badge-new {
+    display: inline-block;
+    padding: calc(var(--px) * 1) calc(var(--px) * 2);
+    font-size: var(--fs-xs);
+    color: var(--vl-bg);
+    background: var(--vl-yellow);
+    box-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-orange);
+    animation: vl-blink 1s steps(1, end) infinite;
+}
+
+.victory .btn-row {
+    margin-top: calc(var(--px) * 5);
+}
+
+/* ---------- 7. HUD -------------------------------------------------- */
+
+.hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--px) * 1);
+    padding: calc(var(--px) * 1.5) calc(var(--px) * 3) calc(var(--px) * 1.5);
+    font-size: var(--fs-xs);
+    line-height: 1;
+    background: linear-gradient(180deg, rgba(11, 6, 19, 0.9) 0%, rgba(11, 6, 19, 0.74) 100%);
+    border-bottom: calc(var(--px) * 0.5) solid var(--vl-violet);
+    text-shadow: calc(var(--px) * 0.5) calc(var(--px) * 0.5) 0 var(--vl-bg);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.hud--hidden {
+    display: none;
+}
+
+.hud-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: calc(var(--px) * 3);
+    min-height: calc(var(--px) * 4.5);
+    overflow: hidden;
+}
+
+.hud-row > * {
+    flex: 0 0 auto;
+}
+
+.hud-row > .hud-spacer {
+    flex: 1 1 auto;
+}
+
+.hud-row > .hud-status,
+.hud-row > .hud-objective,
+.hud-row > .hud-boss-diag {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.hud-brand {
+    color: var(--vl-pink);
+}
+
+.hud-item {
+    color: var(--vl-white);
+}
+
+.hud-item--hi {
+    color: var(--vl-yellow);
+}
+
+.hud-spacer {
+    flex: 1 1 auto;
+    min-width: calc(var(--px) * 2);
+}
+
+.hud-status {
+    color: var(--vl-cyan);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hud-objective {
+    color: var(--vl-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hud-objective .label {
+    color: var(--vl-muted);
+}
+
+.hearts {
+    display: inline-flex;
+    gap: calc(var(--px) * 1);
+    vertical-align: baseline;
+}
+
+.heart {
+    display: inline-block;
+    line-height: 1;
+}
+
+.heart--full {
+    color: var(--vl-pink);
+}
+
+.heart--empty {
+    color: transparent;
+    -webkit-text-stroke: calc(var(--px) * 0.5) var(--vl-light);
+    text-shadow: none;
+}
+
+@supports not (-webkit-text-stroke: 1px red) {
+    .heart--empty {
+        color: var(--vl-grey);
+        opacity: 0.6;
+    }
+}
+
+.hud-badge {
+    display: inline-block;
+    padding: calc(var(--px) * 0.75) calc(var(--px) * 1.25);
+    font-size: calc(var(--px) * 3.5);
+    line-height: 1;
+    color: var(--vl-bg);
+    text-shadow: none;
+    background: var(--vl-cyan);
+    box-shadow: calc(var(--px) * 0.5) calc(var(--px) * 0.5) 0 var(--vl-bg);
+}
+
+.hud-badge--breaker {
+    background: var(--vl-yellow);
+}
+
+.hud-badge--rollback {
+    background: var(--vl-orange);
+}
+
+.hud-badge--phase {
+    background: var(--vl-pink);
+}
+
+.hud-boss {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--px) * 3);
+    font-size: var(--fs-xs);
+}
+
+.hud-boss-name {
+    color: var(--vl-red);
+}
+
+.boss-bar {
+    display: inline-flex;
+    gap: calc(var(--px) * 0.5);
+    padding: calc(var(--px) * 0.5);
+    border: calc(var(--px) * 0.5) solid var(--vl-light);
+    background: var(--vl-bg);
+}
+
+.boss-bar .seg {
+    display: block;
+    width: calc(var(--px) * 5);
+    height: calc(var(--px) * 3);
+    background: var(--vl-dark);
+}
+
+.boss-bar .seg.on {
+    background: var(--vl-red);
+    box-shadow: inset 0 calc(var(--px) * 1) 0 var(--vl-pink);
+}
+
+.hud-boss-diag {
+    color: var(--vl-orange);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------- 8. Toasts ----------------------------------------------- */
+
+.toasts {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.toast-stack {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--px) * 8);
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: calc(var(--px) * 2);
+    transform: translateX(-50%);
+    max-width: calc(100% - var(--px) * 16);
+}
+
+.toast {
+    max-width: 100%;
+    padding: calc(var(--px) * 2) calc(var(--px) * 3);
+    font-size: var(--fs-xs);
+    line-height: 1.6;
+    color: var(--vl-white);
+    background: var(--vl-panel-solid);
+    border: calc(var(--px) * 0.5) solid var(--vl-violet);
+    box-shadow: calc(var(--px) * 1) calc(var(--px) * 1) 0 var(--vl-bg);
+    text-align: center;
+    animation: vl-toast-in 180ms steps(3, end) both;
+}
+
+@keyframes vl-toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(calc(var(--px) * 4));
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.toast p {
+    margin: 0;
+}
+
+.banner-slot {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(100% - var(--px) * 24, calc(var(--px) * 240));
+}
+
+.banner {
+    padding: calc(var(--px) * 4) calc(var(--px) * 6);
+    font-size: var(--fs-sm);
+    line-height: 1.7;
+    color: var(--vl-green);
+    background: var(--vl-panel-solid);
+    border: calc(var(--px) * 1) solid var(--vl-green);
+    box-shadow: calc(var(--px) * 2) calc(var(--px) * 2) 0 rgba(0, 0, 0, 0.6);
+    text-align: left;
+    white-space: pre-wrap;
+    animation: vl-screen-in 220ms steps(5, end) both;
+}
+
+.banner p {
+    margin: 0;
+}
+
+.banner p::before {
+    content: "> ";
+    color: var(--vl-light);
+}
+
+.banner--alert {
+    color: var(--vl-white);
+    border-color: var(--vl-red);
+    background: rgba(74, 10, 22, 0.94);
+    text-align: center;
+    animation: vl-screen-in 220ms steps(5, end) both, vl-alert-flash 500ms steps(1, end) 2;
+}
+
+.banner--alert p::before {
+    content: "! ";
+    color: var(--vl-red);
+}
+
+@keyframes vl-alert-flash {
+    0%, 49% { background: rgba(255, 59, 92, 0.85); color: var(--vl-bg); }
+    50%, 100% { background: rgba(74, 10, 22, 0.94); color: var(--vl-white); }
+}
+
+/* ---------- 9. Touch controls --------------------------------------- */
+
+.touch {
+    display: none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.touch-cluster {
+    position: absolute;
+    bottom: calc(var(--px) * 6);
+    display: flex;
+    gap: calc(var(--px) * 3);
+    align-items: flex-end;
+}
+
+.touch-cluster--left { left: calc(var(--px) * 6); }
+.touch-cluster--right { right: calc(var(--px) * 6); }
+
+.touch-btn {
+    pointer-events: auto;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4em;
+    width: max(48px, calc(var(--px) * 24));
+    height: max(48px, calc(var(--px) * 24));
+    padding: 0;
+    font-family: var(--font-pixel);
+    font-size: max(10px, var(--fs-xs));
+    line-height: 1;
+    color: var(--vl-white);
+    background: rgba(59, 31, 107, 0.55);
+    border: 2px solid rgba(201, 194, 214, 0.7);
+    border-radius: 0;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+}
+
+.touch-btn .glyph {
+    font-size: max(16px, var(--fs-md));
+}
+
+.touch-btn:active,
+.touch-btn.is-down {
+    background: rgba(230, 0, 126, 0.75);
+    border-color: var(--vl-white);
+}
+
+.touch-btn--jump {
+    width: max(56px, calc(var(--px) * 30));
+    height: max(56px, calc(var(--px) * 30));
+}
+
+.touch-pause {
+    pointer-events: auto;
+    position: absolute;
+    top: calc(var(--px) * 21);
+    right: calc(var(--px) * 4);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 0.6em;
+    font-family: var(--font-pixel);
+    font-size: max(10px, var(--fs-xs));
+    color: var(--vl-white);
+    background: rgba(11, 6, 19, 0.7);
+    border: 2px solid rgba(201, 194, 214, 0.7);
+    border-radius: 0;
+    touch-action: manipulation;
+    cursor: pointer;
+}
+
+@media (pointer: coarse) {
+    .touch {
+        display: block;
+    }
+
+    /* keep toasts clear of the thumb clusters */
+    .toast-stack {
+        bottom: calc(var(--px) * 40);
+        max-width: calc(100% - var(--px) * 140);
+    }
+
+    .btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+
+    .btn--small {
+        min-height: 44px;
+    }
+
+    .small-screen-notice .btn {
+        min-height: 44px;
+    }
+}
+
+/* ---------- 10. CRT overlay ----------------------------------------- */
+
+.crt-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        repeating-linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0) 0,
+            rgba(0, 0, 0, 0) 2px,
+            rgba(0, 0, 0, 0.18) 2px,
+            rgba(0, 0, 0, 0.18) 3px
+        ),
+        radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.45) 100%);
+    mix-blend-mode: multiply;
+}
+
+.crt-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(230, 0, 126, 0.03);
+    animation: vl-flicker 4s steps(1, end) infinite;
+}
+
+@keyframes vl-flicker {
+    0%, 97%, 100% { opacity: 0.6; }
+    98% { opacity: 1; }
+    99% { opacity: 0.3; }
+}
+
+.crt-overlay--off,
+.page:not(.crt) .crt-overlay {
+    display: none;
+}
+
+.page.crt .crt-overlay--off {
+    display: none;
+}
+
+.page.reduced-motion .crt-overlay::after {
+    animation: none;
+}
+
+/* ---------- 11. Small screen notice --------------------------------- */
+
+.small-screen-notice {
+    display: none;
+    position: fixed;
+    left: 50%;
+    bottom: 1rem;
+    z-index: 900;
+    width: min(92vw, 28rem);
+    transform: translateX(-50%);
+    padding: 0.75rem 0.9rem;
+    font-size: 0.55rem;
+    line-height: 1.8;
+    color: var(--vl-white);
+    background: var(--vl-night);
+    border: 2px solid var(--vl-pink);
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.7);
+    text-align: center;
+}
+
+.small-screen-notice p {
+    margin: 0 0 0.6rem;
+}
+
+.small-screen-notice .btn {
+    font-size: 0.55rem;
+    min-height: 44px;
+    padding: 0.6rem 1rem;
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--vl-violet);
+}
+
+@media (max-width: 479px), ((orientation: landscape) and (max-height: 269px)) {
+    .small-screen-notice:not(.is-dismissed) {
+        display: block;
+    }
+}
+
+/* ---------- 12. Dev preview page ------------------------------------ */
+
+.preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+.preview-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.5rem;
+    margin: 0;
+    padding: 0.4rem 1rem;
+    font-size: 0.55rem;
+    line-height: 1.6;
+    color: var(--vl-bg);
+    background: var(--vl-yellow);
+    text-align: center;
+}
+
+/* same sizing rule as the game, minus the dev banner; the toolbar scrolls below */
+.preview .stage {
+    width: min(100vw, calc((100vh - 2.5rem) * 16 / 9));
+    height: min(calc(100vh - 2.5rem), calc(100vw * 9 / 16));
+    outline: 1px dashed var(--vl-grey);
+    outline-offset: -1px;
+}
+
+.phaser-placeholder {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 78%, rgba(59, 31, 107, 0.9) 78%, rgba(59, 31, 107, 0.9) 100%),
+        repeating-linear-gradient(90deg, rgba(106, 47, 209, 0.12) 0 1px, transparent 1px calc(var(--px) * 16)),
+        repeating-linear-gradient(180deg, rgba(106, 47, 209, 0.12) 0 1px, transparent 1px calc(var(--px) * 16)),
+        radial-gradient(ellipse at 50% 30%, var(--vl-night) 0%, var(--vl-bg) 75%);
+}
+
+.phaser-placeholder span {
+    margin-bottom: calc(var(--px) * 8);
+    font-size: var(--fs-xs);
+    color: var(--vl-muted);
+}
+
+.preview-toolbar {
+    width: 100%;
+    padding: 0.75rem 1rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    font-size: 0.55rem;
+    color: var(--vl-light);
+    background: var(--vl-night);
+    border-top: 2px solid var(--vl-violet);
+}
+
+.preview-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.preview-group-label {
+    min-width: 6rem;
+    color: var(--vl-muted);
+}
+
+.preview-toolbar .btn {
+    min-height: 32px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.5rem;
+    border-width: 2px;
+    box-shadow: 2px 2px 0 var(--vl-violet);
+}
+
+.preview-toolbar .btn:active {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0 var(--vl-violet);
+}
+
+.preview-toolbar .btn.is-active {
+    background: var(--vl-magenta);
+    border-color: var(--vl-pink);
+}
+
+.preview-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    color: var(--vl-cyan);
+    line-height: 1.6;
+}
+
+.preview-status b {
+    color: var(--vl-white);
+    font-weight: normal;
+}
+
+/* ---------- 13. Reduced motion -------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        animation-delay: 0ms !important;
+        transition-duration: 0.001ms !important;
+    }
+
+    .victory-lines .line {
+        opacity: 1;
+    }
+}
+
+.page.reduced-motion *,
+.page.reduced-motion *::before,
+.page.reduced-motion *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+}
+
+.page.reduced-motion .victory-lines .line {
+    opacity: 1;
+}

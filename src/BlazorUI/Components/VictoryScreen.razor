@@ -1,0 +1,103 @@
+<section class="panel victory" role="dialog" aria-modal="true" aria-labelledby="victory-heading" tabindex="-1" @ref="_panel">
+    <h2 id="victory-heading" class="panel-title">ALL STREAMS OPERATIONAL</h2>
+    <div class="@LinesClass">
+        <p class="line" style="--i:1">Viewers online: @Viewers</p>
+        <p class="line" style="--i:2">Incidents resolved: @Data.IncidentsResolved</p>
+        <p class="line" style="--i:3">Coffee consumed: @Data.CoffeeConsumed cups</p>
+        <p class="line line--shout" style="--i:4">DEPLOYMENT SUCCESSFUL</p>
+        <p class="line line--weekend" style="--i:5">YOU MAY NOW ENJOY YOUR WEEKEND.</p>
+    </div>
+    <div class="victory-scores">
+        <span>FINAL SCORE: @Fmt6(Data.FinalScore)</span>
+        <span class="c-yellow">HIGH SCORE: @Fmt6(Data.HighScore)</span>
+        @if (Data.IsNewHighScore)
+        {
+            <span class="badge-new">NEW HIGH SCORE!</span>
+        }
+    </div>
+    <div class="btn-row">
+        <button type="button" class="btn btn--primary" disabled="@_busy" @onclick="PlayAgainAsync">PLAY AGAIN</button>
+        <button type="button" class="btn" disabled="@_busy" @onclick="MainMenuAsync">MAIN MENU</button>
+    </div>
+    <p class="panel-footnote">Statistics are fictional flavour text.</p>
+</section>
+
+@code {
+    /// <summary>
+    /// Victory screen with staggered lines (instant under reduced motion). Buttons
+    /// are usable immediately. "Play again" sends ReturnToMainMenu followed by
+    /// StartGame, because StartGame is only valid from the menu.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public VictoryStats? Stats { get; set; }
+
+    [Parameter] public bool ReducedMotion { get; set; }
+
+    private static readonly VictoryStats EmptyStats = new(0, 0, 0, 0, 0, false);
+
+    private ElementReference _panel;
+    private bool _busy;
+
+    private VictoryStats Data => Stats ?? EmptyStats;
+
+    private string Viewers => Data.ViewersOnline.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+
+    private string LinesClass => ReducedMotion ? "panel-lines victory-lines victory-lines--instant" : "panel-lines victory-lines";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private async Task PlayAgainAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Mediator.SendAsync(new ReturnToMainMenu());
+            await Mediator.SendAsync(new StartGame());
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MainMenuAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await Mediator.SendAsync(new ReturnToMainMenu());
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string Fmt6(int value) => Math.Clamp(value, 0, 999_999).ToString("000000");
+}

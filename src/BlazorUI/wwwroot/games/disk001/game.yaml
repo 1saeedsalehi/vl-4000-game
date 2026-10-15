@@ -1,0 +1,22 @@
+metadata:
+  id: videoland4000
+  name: VIDEOLAND 4000
+  subtitle: SAVE THE STREAM
+  tagline: One platform. A million viewers. One very tired engineer.
+spec:
+  atlasses:
+    default:
+      textureUrl: assets/sprites.png
+      atlasUrl: assets/sprites.json
+  levels:
+    - levels/login-dungeon.yaml
+  bossArena: levels/boss-arena.yaml
+  scoring:
+    token: 100
+    coffee: 50
+    enemy: 150
+    checkpoint: 250
+    objective: 500
+    boss: 2000
+  player:
+    maxHealth: 3

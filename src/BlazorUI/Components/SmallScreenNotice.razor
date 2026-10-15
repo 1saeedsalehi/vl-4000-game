@@ -1,0 +1,14 @@
+<div class="@(_dismissed ? "small-screen-notice is-dismissed" : "small-screen-notice")" role="note">
+    <p>Best played on desktop with a keyboard &mdash; rotate to landscape</p>
+    <button type="button" class="btn btn--small" @onclick="Dismiss">GOT IT</button>
+</div>
+
+@code {
+    /// <summary>
+    /// Shown purely via CSS media queries when the stage would be narrower than
+    /// ~480px (portrait phones, or tiny landscape viewports). No JS polling.
+    /// </summary>
+    private bool _dismissed;
+
+    private void Dismiss() => _dismissed = true;
+}

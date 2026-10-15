@@ -1,0 +1,186 @@
+@implements IDisposable
+@inject ILogger<BootScreen> Logger
+
+<div class="boot"
+     role="button"
+     tabindex="0"
+     aria-label="Boot sequence. Press Enter, click or tap to skip."
+     @ref="_root"
+     @onclick="SkipAsync">
+    <div class="boot-text" aria-live="polite">
+        @for (var i = 0; i < Math.Min(_visible, Lines.Length); i++)
+        {
+            var line = Lines[i];
+            <span class="@LineClass(i)">@if (line.EndsWith(OkTag, StringComparison.Ordinal))
+                {
+                    @line[..^OkTag.Length]<span class="ok">@OkTag</span>
+                }
+                else
+                {
+                    @line
+                }@if (i == _visible - 1 && !_completed)
+                {
+                    <span class="boot-cursor" aria-hidden="true"></span>
+                }</span>
+        }
+    </div>
+    <p class="boot-hint" aria-hidden="true">CLICK OR PRESS ENTER TO SKIP</p>
+</div>
+
+@code {
+    /// <summary>
+    /// Retro boot text revealed line by line (~2.5 s in total). Purely fictional:
+    /// nothing here calls any service. Skippable with a click/tap (here) or
+    /// Enter/Space (forwarded once by <see cref="GlobalHotKeys"/> through keyboard.js;
+    /// handling keys here as well made a single press skip two screens); instant under
+    /// reduced motion. Sends <see cref="BootCompleted"/> when done or skipped.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public bool ReducedMotion { get; set; }
+
+    public static readonly string[] Lines =
+    {
+        "VIDEOLAND SYSTEMS",
+        "---------------------------",
+        "INITIALIZING STREAM ENGINE...",
+        "IDENTITY SERVICE     [ OK ]",
+        "CONTENT SERVICE      [ OK ]",
+        "STREAMING SERVICE    [ OK ]",
+        "DATABASE             [ OK ]",
+        "WARNING: PRIME TIME APPROACHING",
+        "PRESS START",
+    };
+
+    private const string OkTag = "[ OK ]";
+    private const int FirstLineDelayMs = 150;
+    private const int LineDelayMs = 230;
+    private const int HoldMs = 650;
+    private const int ReducedMotionHoldMs = 1200;
+
+    private ElementReference _root;
+    private CancellationTokenSource? _cts;
+    private int _visible;
+    private bool _completed;
+    private bool _reducedMotionApplied;
+
+    protected override void OnInitialized()
+    {
+        _cts = new CancellationTokenSource();
+        _ = RunAsync(_cts.Token);
+    }
+
+    protected override void OnParametersSet()
+    {
+        // The reduced-motion preference may arrive after the typewriter started (settings load
+        // asynchronously): reveal everything at once and restart the hold timer.
+        if (ReducedMotion && !_reducedMotionApplied)
+        {
+            _reducedMotionApplied = true;
+            _visible = Lines.Length;
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            _ = HoldAndCompleteAsync(_cts.Token);
+        }
+    }
+
+    private async Task HoldAndCompleteAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(ReducedMotionHoldMs, token);
+            await CompleteAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Skipped or disposed.
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _root.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private async Task RunAsync(CancellationToken token)
+    {
+        try
+        {
+            if (ReducedMotion)
+            {
+                _visible = Lines.Length;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(ReducedMotionHoldMs, token);
+            }
+            else
+            {
+                var delay = FirstLineDelayMs;
+                while (_visible < Lines.Length)
+                {
+                    await Task.Delay(delay, token);
+                    delay = LineDelayMs;
+                    _visible = Math.Min(_visible + 1, Lines.Length);
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                await Task.Delay(HoldMs, token);
+            }
+
+            await CompleteAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            // Skipped or disposed.
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Boot sequence failed");
+        }
+    }
+
+    private Task SkipAsync() => CompleteAsync();
+
+    private async Task CompleteAsync()
+    {
+        if (!_completed)
+        {
+            _completed = true;
+            _visible = Lines.Length;
+            _cts?.Cancel();
+            StateHasChanged();
+        }
+
+        // Always (re)send: the host may not have been ready for the first one (slow content load),
+        // and the session ignores the command once the boot phase is over.
+        await Mediator.SendAsync(new BootCompleted());
+    }
+
+    private static string LineClass(int index) => index switch
+    {
+        0 => "boot-line boot-line--header",
+        1 => "boot-line boot-line--rule",
+        7 => "boot-line boot-line--warn",
+        8 => "boot-line boot-line--start blink",
+        _ => "boot-line",
+    };
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+    }
+}

@@ -1,0 +1,126 @@
+@implements IDisposable
+
+<div class="overlay overlay-screen">
+    @if (ShowsScreen)
+    {
+        <div class="@ScreenClasses" @key="_phase">
+            @switch (_phase)
+            {
+                case GamePhase.Booting:
+                    <BootScreen ReducedMotion="_settings.ReducedMotion" />
+                    break;
+                case GamePhase.MainMenu:
+                    <TitleScreen HighScore="_hud.HighScore" Settings="_settings" />
+                    break;
+                case GamePhase.LevelIntro:
+                    <LevelIntro LevelNumber="LevelNumber" LevelName="@_hud.LevelName" Objective="@_hud.Objective" />
+                    break;
+                case GamePhase.Paused:
+                    <PauseOverlay Settings="_settings" />
+                    break;
+                case GamePhase.GameOver:
+                    <GameOverScreen FinalScore="_gameOver?.FinalScore ?? _hud.Score"
+                                    HighScore="_gameOver?.HighScore ?? _hud.HighScore"
+                                    CheckpointAvailable="_gameOver?.CheckpointAvailable ?? false" />
+                    break;
+                case GamePhase.Victory:
+                    <VictoryScreen Stats="_victory" ReducedMotion="_settings.ReducedMotion" />
+                    break;
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Renders exactly one full-screen UI state for the current <see cref="GamePhase"/>
+    /// (or nothing while playing). It is the single mediator subscriber for the
+    /// screens: the latest HUD, settings, game-over and victory data are captured
+    /// here (those events are published right before their phase change) and
+    /// passed down as parameters, so child screens never miss an event.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    /// <summary>Phase to show before the first <see cref="PhaseChanged"/> arrives.</summary>
+    [Parameter] public GamePhase InitialPhase { get; set; } = GamePhase.Booting;
+
+    /// <summary>HUD state published before this component was mounted (optional).</summary>
+    [Parameter] public HudState? InitialHud { get; set; }
+
+    /// <summary>Settings published before this component was mounted (optional).</summary>
+    [Parameter] public GameSettings? InitialSettings { get; set; }
+
+    /// <summary>Level number shown on the intro card.</summary>
+    [Parameter] public int LevelNumber { get; set; } = 1;
+
+    private readonly List<IDisposable> _subscriptions = new();
+    private GamePhase _phase;
+    private HudState _hud = HudState.Empty;
+    private GameSettings _settings = GameSettings.Default;
+    private GameEnded? _gameOver;
+    private VictoryStats? _victory;
+
+    private bool ShowsScreen => _phase is not (GamePhase.Playing or GamePhase.BossEncounter);
+
+    private string ScreenClasses => $"screen screen--{_phase.ToString().ToLowerInvariant()}";
+
+    protected override void OnInitialized()
+    {
+        _phase = InitialPhase;
+        _hud = InitialHud ?? HudState.Empty;
+        _settings = InitialSettings ?? GameSettings.Default;
+
+        _subscriptions.Add(Mediator.Subscribe<PhaseChanged>(OnPhaseChangedAsync));
+        _subscriptions.Add(Mediator.Subscribe<HudChanged>(OnHudChangedAsync));
+        _subscriptions.Add(Mediator.Subscribe<SettingsChanged>(OnSettingsChangedAsync));
+        _subscriptions.Add(Mediator.Subscribe<GameEnded>(OnGameEndedAsync));
+        _subscriptions.Add(Mediator.Subscribe<VictoryAchieved>(OnVictoryAsync));
+    }
+
+    private Task OnPhaseChangedAsync(PhaseChanged e)
+    {
+        if (_phase == e.Phase)
+        {
+            return Task.CompletedTask;
+        }
+
+        _phase = e.Phase;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnHudChangedAsync(HudChanged e)
+    {
+        _hud = e.Hud;
+        // Only the menu/intro/game-over screens display HUD values; while playing
+        // nothing is rendered here, so skip the re-render.
+        return ShowsScreen ? InvokeAsync(StateHasChanged) : Task.CompletedTask;
+    }
+
+    private Task OnSettingsChangedAsync(SettingsChanged e)
+    {
+        _settings = e.Settings;
+        return ShowsScreen ? InvokeAsync(StateHasChanged) : Task.CompletedTask;
+    }
+
+    private Task OnGameEndedAsync(GameEnded e)
+    {
+        _gameOver = e;
+        return _phase == GamePhase.GameOver ? InvokeAsync(StateHasChanged) : Task.CompletedTask;
+    }
+
+    private Task OnVictoryAsync(VictoryAchieved e)
+    {
+        _victory = e.Stats;
+        return _phase == GamePhase.Victory ? InvokeAsync(StateHasChanged) : Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _subscriptions.Clear();
+    }
+}

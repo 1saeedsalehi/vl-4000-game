@@ -1,0 +1,157 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject ILogger<TouchControls> Logger
+
+<div class="overlay overlay-touch">
+    @if (Visible)
+    {
+        <div class="touch" aria-label="Touch controls">
+            <div class="touch-cluster touch-cluster--left">
+                <button type="button" class="@ButtonClass(LeftBit)" aria-label="Move left"
+                        @onpointerdown="@(() => PressAsync(LeftBit, true))"
+                        @onpointerup="@(() => PressAsync(LeftBit, false))"
+                        @onpointercancel="@(() => PressAsync(LeftBit, false))"
+                        @onpointerleave="@(() => PressAsync(LeftBit, false))"
+                        @onpointerdown:preventDefault
+                        @oncontextmenu:preventDefault>
+                    <span class="glyph" aria-hidden="true">&#9664;</span>
+                </button>
+                <button type="button" class="@ButtonClass(RightBit)" aria-label="Move right"
+                        @onpointerdown="@(() => PressAsync(RightBit, true))"
+                        @onpointerup="@(() => PressAsync(RightBit, false))"
+                        @onpointercancel="@(() => PressAsync(RightBit, false))"
+                        @onpointerleave="@(() => PressAsync(RightBit, false))"
+                        @onpointerdown:preventDefault
+                        @oncontextmenu:preventDefault>
+                    <span class="glyph" aria-hidden="true">&#9654;</span>
+                </button>
+            </div>
+
+            <div class="touch-cluster touch-cluster--right">
+                <button type="button" class="@ButtonClass(InteractBit)" aria-label="Interact"
+                        @onpointerdown="@(() => PressAsync(InteractBit, true))"
+                        @onpointerup="@(() => PressAsync(InteractBit, false))"
+                        @onpointercancel="@(() => PressAsync(InteractBit, false))"
+                        @onpointerleave="@(() => PressAsync(InteractBit, false))"
+                        @onpointerdown:preventDefault
+                        @oncontextmenu:preventDefault>
+                    <span class="glyph" aria-hidden="true">E</span>
+                    <span aria-hidden="true">ACT</span>
+                </button>
+                <button type="button" class="@ButtonClass(JumpBit) touch-btn--jump" aria-label="Jump"
+                        @onpointerdown="@(() => PressAsync(JumpBit, true))"
+                        @onpointerup="@(() => PressAsync(JumpBit, false))"
+                        @onpointercancel="@(() => PressAsync(JumpBit, false))"
+                        @onpointerleave="@(() => PressAsync(JumpBit, false))"
+                        @onpointerdown:preventDefault
+                        @oncontextmenu:preventDefault>
+                    <span class="glyph" aria-hidden="true">&uarr;</span>
+                    <span aria-hidden="true">JUMP</span>
+                </button>
+            </div>
+
+            <button type="button" class="touch-pause" aria-label="Pause" @onclick="PauseAsync">II</button>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// On-screen gameplay buttons for coarse pointers (shown via CSS only on
+    /// <c>(pointer: coarse)</c>). Each press/release calls <c>setTouchButton(bit, down)</c>
+    /// in JS; bits follow docs/ARCHITECTURE.md §3 (Left=1, Right=2, Jump=4, Interact=8).
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public GamePhase InitialPhase { get; set; } = GamePhase.Booting;
+
+    private const int LeftBit = (int)InputButtons.Left;
+    private const int RightBit = (int)InputButtons.Right;
+    private const int JumpBit = (int)InputButtons.Jump;
+    private const int InteractBit = (int)InputButtons.Interact;
+
+    private IDisposable? _subscription;
+    private GamePhase _phase;
+    private int _held;
+    private bool _warnedMissingJs;
+
+    private bool Visible => _phase is GamePhase.Playing or GamePhase.BossEncounter;
+
+    private string ButtonClass(int bit) => (_held & bit) != 0 ? "touch-btn is-down" : "touch-btn";
+
+    protected override void OnInitialized()
+    {
+        _phase = InitialPhase;
+        _subscription = Mediator.Subscribe<PhaseChanged>(OnPhaseChangedAsync);
+    }
+
+    private async Task OnPhaseChangedAsync(PhaseChanged e)
+    {
+        var wasVisible = Visible;
+        _phase = e.Phase;
+
+        if (!Visible)
+        {
+            await ReleaseAllAsync();
+        }
+
+        if (wasVisible != Visible)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task PressAsync(int bit, bool down)
+    {
+        var wasDown = (_held & bit) != 0;
+        if (down == wasDown)
+        {
+            return;
+        }
+
+        _held = down ? _held | bit : _held & ~bit;
+        await SetTouchButtonAsync(bit, down);
+    }
+
+    private async Task ReleaseAllAsync()
+    {
+        var held = _held;
+        _held = 0;
+        foreach (var bit in new[] { LeftBit, RightBit, JumpBit, InteractBit })
+        {
+            if ((held & bit) != 0)
+            {
+                await SetTouchButtonAsync(bit, false);
+            }
+        }
+    }
+
+    private async Task SetTouchButtonAsync(int bit, bool down)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("setTouchButton", bit, down);
+        }
+        catch (JSException ex)
+        {
+            if (!_warnedMissingJs)
+            {
+                _warnedMissingJs = true;
+                Logger.LogWarning("setTouchButton is not available: {Message}", ex.Message);
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Page is going away.
+        }
+    }
+
+    private Task PauseAsync() => Mediator.SendAsync(new TogglePause());
+
+    public async ValueTask DisposeAsync()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        await ReleaseAllAsync();
+    }
+}

@@ -1,0 +1,16 @@
+global using Videoland4000;
+global using Videoland4000.Geometry;
+global using Videoland4000.Input;
+global using Videoland4000.Mediator;
+global using Videoland4000.Messages.Commands;
+global using Videoland4000.Messages.Events;
+global using Videoland4000.Model;
+global using Videoland4000.Model.Levels;
+global using Videoland4000.Model.Manifest;
+global using Videoland4000.Model.Session;
+global using Videoland4000.Model.Simulation;
+global using Videoland4000.Persistence;
+global using Videoland4000.Rendering;
+global using System.Diagnostics.CodeAnalysis;
+global using System.Text.Json;
+global using System.Text.Json.Serialization;

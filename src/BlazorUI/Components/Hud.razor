@@ -1,0 +1,140 @@
+@implements IDisposable
+
+<div class="overlay overlay-hud">
+    <div class="@HudClasses" role="status" aria-live="off" aria-label="Heads-up display">
+        <div class="hud-row">
+            <span class="hud-brand">VIDEOLAND 4000</span>
+            <span class="hud-item">SCORE: @Fmt6(_hud.Score)</span>
+            <span class="hud-item hud-item--hi">HI-SCORE: @Fmt6(_hud.HighScore)</span>
+            <span class="hud-spacer"></span>
+            @if (!string.IsNullOrWhiteSpace(_hud.Status))
+            {
+                <span class="hud-status">@_hud.Status</span>
+            }
+        </div>
+
+        <div class="hud-row">
+            <span class="hud-item">TOKENS: @Fmt2(_hud.Tokens) / @Fmt2(_hud.TokensRequired)</span>
+            <span class="hud-item">HEALTH: <span class="hearts" role="img" aria-label="@HealthLabel">@for (var i = 0; i < HeartCount; i++)
+                {
+                    <span class="@(i < _hud.Health ? "heart heart--full" : "heart heart--empty")" aria-hidden="true">&#9829;</span>
+                }</span></span>
+            <span class="hud-item">COFFEE: @Fmt2(_hud.Coffee)</span>
+            <span class="hud-spacer"></span>
+            @if (_hud.CacheBoostSeconds > 0)
+            {
+                <span class="hud-badge hud-badge--cache">CACHE BOOST @Secs(_hud.CacheBoostSeconds)s</span>
+            }
+            @if (_hud.FreezeSeconds > 0)
+            {
+                <span class="hud-badge hud-badge--breaker">BREAKER @Secs(_hud.FreezeSeconds)s</span>
+            }
+            @if (_hud.RollbackArmed)
+            {
+                <span class="hud-badge hud-badge--rollback">ROLLBACK ARMED</span>
+            }
+        </div>
+
+        @if (_hud.BossActive)
+        {
+            <div class="hud-row hud-boss">
+                <span class="hud-boss-name">INFINITE LOADING SPINNER</span>
+                <span class="boss-bar" role="img" aria-label="@BossLabel">
+                    @for (var i = 0; i < BossSegments; i++)
+                    {
+                        <i class="@(i < BossFilled ? "seg on" : "seg")"></i>
+                    }
+                </span>
+                @if (_hud.BossPhase > 0)
+                {
+                    <span class="hud-badge hud-badge--phase">PHASE @_hud.BossPhase</span>
+                }
+                <span class="hud-spacer"></span>
+                @if (!string.IsNullOrWhiteSpace(_hud.BossDiagnostic))
+                {
+                    <span class="hud-boss-diag">@_hud.BossDiagnostic</span>
+                }
+            </div>
+        }
+        else if (!string.IsNullOrWhiteSpace(_hud.Objective))
+        {
+            <div class="hud-row hud-row--secondary">
+                <span class="hud-objective"><span class="label">OBJECTIVE:</span> @_hud.Objective</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Top HUD strip (≤ ~22 logical px). Re-renders only on <see cref="HudChanged"/>;
+    /// <see cref="PhaseChanged"/> is used solely to hide it outside gameplay.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public HudState? InitialHud { get; set; }
+
+    [Parameter] public GamePhase InitialPhase { get; set; } = GamePhase.Booting;
+
+    /// <summary>Show the strip in every phase (dev preview).</summary>
+    [Parameter] public bool AlwaysVisible { get; set; }
+
+    private const int MaxBossSegments = 16;
+
+    private readonly List<IDisposable> _subscriptions = new();
+    private HudState _hud = HudState.Empty;
+    private GamePhase _phase;
+
+    private bool Visible => AlwaysVisible || _phase is GamePhase.Playing or GamePhase.BossEncounter or GamePhase.Paused;
+
+    private string HudClasses => Visible ? "hud" : "hud hud--hidden";
+
+    private int HeartCount => Math.Clamp(_hud.MaxHealth, 0, 10);
+
+    private string HealthLabel => $"Health {Math.Clamp(_hud.Health, 0, HeartCount)} of {HeartCount}";
+
+    private int BossSegments => Math.Clamp(_hud.BossMaxHealth, 1, MaxBossSegments);
+
+    private int BossFilled => _hud.BossMaxHealth <= 0
+        ? 0
+        : (int)Math.Ceiling(Math.Clamp(_hud.BossHealth, 0, _hud.BossMaxHealth) * (double)BossSegments / _hud.BossMaxHealth);
+
+    private string BossLabel => $"Boss health {Math.Max(0, _hud.BossHealth)} of {Math.Max(0, _hud.BossMaxHealth)}";
+
+    protected override void OnInitialized()
+    {
+        _hud = InitialHud ?? HudState.Empty;
+        _phase = InitialPhase;
+        _subscriptions.Add(Mediator.Subscribe<HudChanged>(OnHudChangedAsync));
+        _subscriptions.Add(Mediator.Subscribe<PhaseChanged>(OnPhaseChangedAsync));
+    }
+
+    private Task OnHudChangedAsync(HudChanged e)
+    {
+        _hud = e.Hud;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnPhaseChangedAsync(PhaseChanged e)
+    {
+        var wasVisible = Visible;
+        _phase = e.Phase;
+        return wasVisible == Visible ? Task.CompletedTask : InvokeAsync(StateHasChanged);
+    }
+
+    private static string Fmt6(int value) => Math.Clamp(value, 0, 999_999).ToString("000000");
+
+    private static string Fmt2(int value) => Math.Clamp(value, 0, 99).ToString("00");
+
+    private static string Secs(double seconds) => Math.Clamp(Math.Ceiling(seconds), 0, 99).ToString("00");
+
+    public void Dispose()
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _subscriptions.Clear();
+    }
+}

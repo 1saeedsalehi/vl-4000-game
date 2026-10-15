@@ -1,0 +1,40 @@
+@implements IDisposable
+
+<div class="@(_enabled ? "crt-overlay" : "crt-overlay crt-overlay--off")" aria-hidden="true"></div>
+
+@code {
+    /// <summary>
+    /// Scanlines + vignette (+ faint flicker unless reduced motion). Follows
+    /// <see cref="SettingsChanged"/>.CrtEnabled; the layout mirrors the same flag
+    /// as the "crt" class on <c>.page</c>.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public GameSettings? InitialSettings { get; set; }
+
+    private IDisposable? _subscription;
+    private bool _enabled = GameSettings.Default.CrtEnabled;
+
+    protected override void OnInitialized()
+    {
+        _enabled = (InitialSettings ?? GameSettings.Default).CrtEnabled;
+        _subscription = Mediator.Subscribe<SettingsChanged>(OnSettingsChangedAsync);
+    }
+
+    private Task OnSettingsChangedAsync(SettingsChanged e)
+    {
+        if (_enabled == e.Settings.CrtEnabled)
+        {
+            return Task.CompletedTask;
+        }
+
+        _enabled = e.Settings.CrtEnabled;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+    }
+}

@@ -1,0 +1,123 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject ILogger<GlobalHotKeys> Logger
+
+@code {
+    /// <summary>
+    /// Receives one-shot UI keys from <c>keyboard.js</c> (which calls
+    /// <see cref="OnKeyDownAsync"/> through a DotNetObjectReference) and maps them
+    /// to mediator commands depending on the current phase. Renders nothing.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public GamePhase InitialPhase { get; set; } = GamePhase.Booting;
+
+    /// <summary>Phase as last reported by <see cref="PhaseChanged"/>.</summary>
+    public GamePhase Phase => _phase;
+
+    /// <summary>True once keyboard.js accepted the capture (keys then arrive via JS, not via DOM handlers).</summary>
+    public bool IsCapturing => _captured;
+
+    private IDisposable? _subscription;
+    private DotNetObjectReference<GlobalHotKeys>? _selfRef;
+    private GamePhase _phase;
+    private bool _captured;
+
+    protected override void OnInitialized()
+    {
+        _phase = InitialPhase;
+        _subscription = Mediator.Subscribe<PhaseChanged>(e =>
+        {
+            _phase = e.Phase;
+            return Task.CompletedTask;
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _selfRef = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("captureKeyDown", _selfRef);
+            _captured = true;
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning("captureKeyDown is not available; global hot keys are disabled: {Message}", ex.Message);
+        }
+    }
+
+    /// <summary>Called by keyboard.js for every non-repeated keydown. Returns true when handled.</summary>
+    [JSInvokable]
+    public async Task<bool> OnKeyDownAsync(string code)
+    {
+        switch (code)
+        {
+            case "Enter":
+            case "NumpadEnter":
+            case "Space":
+                switch (_phase)
+                {
+                    case GamePhase.Booting:
+                        return await SendAsync(new BootCompleted());
+                    case GamePhase.MainMenu:
+                        return await SendAsync(new StartGame());
+                    case GamePhase.LevelIntro:
+                        return await SendAsync(new SkipIntro());
+                    default:
+                        return false;
+                }
+
+            case "KeyP":
+            case "Escape":
+                return _phase is GamePhase.Playing or GamePhase.BossEncounter or GamePhase.Paused
+                    && await SendAsync(new TogglePause());
+
+            case "KeyR":
+                return _phase == GamePhase.GameOver && await SendAsync(new RetryGame());
+
+            case "KeyM":
+                return _phase is GamePhase.Paused or GamePhase.GameOver or GamePhase.Victory
+                    && await SendAsync(new ReturnToMainMenu());
+
+            case "KeyN":
+                return await SendAsync(new ToggleSound());
+
+            default:
+                return false;
+        }
+    }
+
+    private async Task<bool> SendAsync<TCommand>(TCommand command) where TCommand : ICommand
+    {
+        await Mediator.SendAsync(command);
+        return true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+
+        if (_captured)
+        {
+            _captured = false;
+            try
+            {
+                await JS.InvokeVoidAsync("releaseKeyDown");
+            }
+            catch (Exception ex) when (ex is JSException or JSDisconnectedException or TaskCanceledException)
+            {
+                // Page is going away; nothing left to release.
+            }
+        }
+
+        _selfRef?.Dispose();
+        _selfRef = null;
+    }
+}

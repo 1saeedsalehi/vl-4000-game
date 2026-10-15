@@ -1,0 +1,45 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject IMediator Mediator
+@inject GameSettingsService SettingsService
+
+<div class="@PageClasses">
+    @Body
+</div>
+
+@code {
+    // The layout sits outside the host page, so it cannot receive the cascaded
+    // mediator; it uses the same singleton from DI to mirror settings onto .page
+    // (classes "crt" / "reduced-motion" per docs/ARCHITECTURE.md §5).
+    private IDisposable? _subscription;
+    private GameSettings _settings = GameSettings.Default;
+
+    private string PageClasses
+    {
+        get
+        {
+            var classes = "page";
+            if (_settings.CrtEnabled) classes += " crt";
+            if (_settings.ReducedMotion) classes += " reduced-motion";
+            return classes;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _settings = SettingsService.Current;
+        _subscription = Mediator.Subscribe<SettingsChanged>(OnSettingsChangedAsync);
+    }
+
+    private Task OnSettingsChangedAsync(SettingsChanged e)
+    {
+        _settings = e.Settings;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+    }
+}

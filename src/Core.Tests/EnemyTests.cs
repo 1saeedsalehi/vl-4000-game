@@ -1,0 +1,233 @@
+using Videoland4000.Core.Tests.Support;
+
+namespace Videoland4000.Core.Tests;
+
+public class EnemyTests
+{
+    [Fact]
+    public void SpinnerStaysWithinItsPatrolRange()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            .........S..........
+            ....................
+            ....................
+            .P..................
+            ####################
+            """);
+        var driver = new Driver();
+        var spinner = world.Enemies.Single();
+
+        var minX = double.MaxValue;
+        var maxX = double.MinValue;
+        for (var i = 0; i < 60 * 12; i++)
+        {
+            driver.Step(world);
+            minX = Math.Min(minX, spinner.CenterX);
+            maxX = Math.Max(maxX, spinner.CenterX);
+        }
+
+        Assert.True(minX >= spinner.PatrolMin - 0.01);
+        Assert.True(maxX <= spinner.PatrolMax + 0.01);
+        Assert.True(maxX - minX > 40, "spinner actually patrols");
+    }
+
+    [Fact]
+    public void BugTurnsAtPlatformEdgesAndWalls()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            .....G..............
+            ...#####............
+            P...................
+            ####################
+            """);
+        var driver = new Driver();
+        var bug = world.Enemies.Single();
+        var platform = world.Level.Solids.Single(s => Math.Abs(s.Top - (164 - 32)) < 0.01);
+
+        var turns = 0;
+        var facing = bug.FacingRight;
+        for (var i = 0; i < 120 * 10; i++)
+        {
+            driver.Step(world);
+            Assert.True(bug.Bounds.Left >= platform.Left - 0.5 && bug.Bounds.Right <= platform.Right + 0.5, $"bug left its platform at step {i}");
+            Assert.Equal(platform.Top, bug.Bounds.Bottom, 1);
+            if (bug.FacingRight != facing)
+            {
+                turns++;
+                facing = bug.FacingRight;
+            }
+        }
+
+        Assert.True(turns >= 3, $"expected several turns, got {turns}");
+    }
+
+    [Fact]
+    public void ExpiredTokenStaysInsideItsBoxAndCyclesVisibility()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ..........X.........
+            P...................
+            ####################
+            """);
+        var driver = new Driver();
+        var token = world.Enemies.Single();
+        var phases = new HashSet<ExpiredPhase>();
+
+        for (var i = 0; i < 120 * 8; i++)
+        {
+            driver.Step(world);
+            phases.Add(token.Phase);
+            Assert.True(token.Bounds.Left >= token.Box.Left - 0.01 && token.Bounds.Right <= token.Box.Right + 0.01, "x within box");
+            Assert.True(token.Bounds.Top >= token.Box.Top - 0.01 && token.Bounds.Bottom <= token.Box.Bottom + 0.01, "y within box");
+        }
+
+        Assert.Contains(ExpiredPhase.Visible, phases);
+        Assert.Contains(ExpiredPhase.Warning, phases);
+        Assert.Contains(ExpiredPhase.Gone, phases);
+        Assert.Contains(ExpiredPhase.Reappearing, phases);
+    }
+
+    [Fact]
+    public void ExpiredTokenIsIntangibleWhileGone()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ..........X.........
+            P...................
+            ####################
+            """);
+        var driver = new Driver();
+        var token = world.Enemies.Single();
+
+        while (token.Phase != ExpiredPhase.Gone)
+        {
+            driver.Step(world);
+        }
+
+        world.Player.Teleport(new Point(token.CenterX, token.Bounds.Bottom));
+        driver.Step(world);
+        Assert.Equal(3, world.Player.Health);
+    }
+
+    [Fact]
+    public void StompingDefeatsTheEnemyWithoutDamage()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            P....G..............
+            ####################
+            """);
+        var driver = new Driver();
+        var bug = world.Enemies.Single();
+
+        // Drop onto the bug from above.
+        world.Player.Teleport(new Point(bug.CenterX, bug.Bounds.Top - 30));
+        driver.Step(world, steps: 1);
+        world.Player.VelY = 120;
+        driver.Step(world, steps: 60);
+
+        Assert.Empty(world.Enemies);
+        Assert.Equal(3, world.Player.Health);
+        var events = Driver.Drain(world);
+        Assert.Single(events, e => e.Kind == WorldEventKind.EnemyDefeated);
+        Assert.DoesNotContain(events, e => e.Kind == WorldEventKind.PlayerDamaged);
+    }
+
+    [Fact]
+    public void TouchingAnEnemyFromTheSideHurts()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            P....G..............
+            ####################
+            """);
+        var driver = new Driver();
+        driver.Seconds(world, 0.2);
+
+        // Walk into the bug; stop as soon as the hit lands.
+        for (var i = 0; i < 120 * 3 && world.Player.Health == 3; i++)
+        {
+            driver.Step(world, InputButtons.Right);
+        }
+
+        Assert.Equal(2, world.Player.Health);
+        Assert.Single(world.Enemies);
+        Assert.True(world.Player.VelX < 0, "knocked back away from the enemy");
+        Assert.Contains(Driver.Drain(world), e => e.Kind == WorldEventKind.PlayerDamaged && e.Enemy == EnemyKind.Bug);
+    }
+
+    [Fact]
+    public void DefeatedEnemiesNeverDamageAgain()
+    {
+        var world = TestContent.NewWorld("""
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            ....................
+            P....G..............
+            ####################
+            """);
+        var driver = new Driver();
+        var bug = world.Enemies.Single();
+        var bugX = bug.CenterX;
+
+        world.Player.Teleport(new Point(bugX, bug.Bounds.Top - 30));
+        driver.Step(world);
+        world.Player.VelY = 120;
+        driver.Step(world, steps: 60);
+        Assert.Empty(world.Enemies);
+
+        driver.Seconds(world, 2.0, InputButtons.Left);
+        driver.Seconds(world, 2.0, InputButtons.Right);
+        Assert.Equal(3, world.Player.Health);
+    }
+}

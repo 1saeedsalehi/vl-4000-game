@@ -1,0 +1,48 @@
+<section class="panel panel--narrow pause" role="dialog" aria-modal="true" aria-labelledby="pause-heading" tabindex="-1" @ref="_panel">
+    <h2 id="pause-heading" class="panel-title">PAUSED</h2>
+    <p class="panel-subtitle">DEPLOYMENT FROZEN</p>
+    <div class="btn-stack">
+        <button type="button" class="btn btn--primary" @onclick="ResumeAsync">RESUME</button>
+        <button type="button" class="btn" aria-pressed="@Pressed(Settings.SoundEnabled)" @onclick="ToggleSoundAsync">SOUND: @OnOff(Settings.SoundEnabled)</button>
+        <button type="button" class="btn" aria-pressed="@Pressed(Settings.CrtEnabled)" @onclick="ToggleCrtAsync">CRT: @OnOff(Settings.CrtEnabled)</button>
+        <button type="button" class="btn" @onclick="MainMenuAsync">MAIN MENU</button>
+    </div>
+    <p class="panel-footnote">P / ESC RESUME &middot; M MENU &middot; N SOUND</p>
+</section>
+
+@code {
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public GameSettings Settings { get; set; } = GameSettings.Default;
+
+    private ElementReference _panel;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private Task ResumeAsync() => Mediator.SendAsync(new TogglePause());
+
+    private Task ToggleSoundAsync() => Mediator.SendAsync(new ToggleSound());
+
+    private Task ToggleCrtAsync() => Mediator.SendAsync(new ToggleCrt());
+
+    private Task MainMenuAsync() => Mediator.SendAsync(new ReturnToMainMenu());
+
+    private static string OnOff(bool value) => value ? "ON" : "OFF";
+
+    private static string Pressed(bool value) => value ? "true" : "false";
+}

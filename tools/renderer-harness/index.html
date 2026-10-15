@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>VL4000 renderer harness</title>
+  <style>
+    @font-face {
+      font-family: "Press Start 2P";
+      src: url("../../src/BlazorUI/wwwroot/assets/fonts/PressStart2P-Regular.ttf") format("truetype");
+      font-display: block;
+    }
+    :root {
+      --vl-bg: #0b0613; --vl-night: #1a0f2e; --vl-purple: #3b1f6b; --vl-violet: #6a2fd1;
+      --vl-magenta: #e6007e; --vl-pink: #ff4fa3; --vl-white: #f6f2ff; --vl-light: #c9c2d6;
+      --vl-grey: #6e6684; --vl-dark: #2e2940; --vl-cyan: #35d6ff; --vl-green: #3dff8a;
+      --vl-yellow: #ffd43b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px; background: var(--vl-bg); color: var(--vl-light);
+      font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    }
+    h1 {
+      font-family: "Press Start 2P", monospace; font-size: 12px; color: var(--vl-pink);
+      margin: 0 0 12px; letter-spacing: 1px;
+    }
+    h1 span { color: var(--vl-grey); font-size: 8px; margin-left: 12px; }
+    .stage {
+      position: relative; width: min(960px, 100%); aspect-ratio: 16 / 9;
+      background: var(--vl-bg); border: 2px solid var(--vl-purple); overflow: hidden;
+    }
+    #phaser { position: absolute; inset: 0; }
+    #phaser canvas { image-rendering: pixelated; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; max-width: 960px; }
+    button, select {
+      background: var(--vl-night); color: var(--vl-white); border: 1px solid var(--vl-violet);
+      padding: 6px 10px; font: inherit; cursor: pointer; border-radius: 3px;
+    }
+    button:hover { background: var(--vl-purple); }
+    button.on { border-color: var(--vl-magenta); color: var(--vl-pink); }
+    #stats {
+      margin-top: 10px; max-width: 960px; white-space: pre-wrap; color: var(--vl-cyan);
+      background: #110a1f; border: 1px solid var(--vl-dark); padding: 8px; min-height: 60px;
+    }
+    .touch { display: flex; gap: 8px; }
+    .touch button { width: 56px; height: 40px; user-select: none; touch-action: none; }
+    .hint { color: var(--vl-grey); }
+    .hint kbd { color: var(--vl-light); }
+    #log { margin-top: 8px; color: var(--vl-yellow); white-space: pre-wrap; max-width: 960px; }
+  </style>
+</head>
+<body>
+  <h1>VIDEOLAND 4000 <span>RENDERER HARNESS</span></h1>
+
+  <div class="stage" id="stage">
+    <div id="phaser"></div>
+  </div>
+
+  <div class="row">
+    <button id="btn-pause">Pause</button>
+    <button id="btn-flash">Flash</button>
+    <button id="btn-shake">Shake</button>
+    <button id="btn-theme">Theme: dungeon</button>
+    <label>Music
+      <select id="sel-music">
+        <option value="level">level</option>
+        <option value="title">title</option>
+        <option value="boss">boss</option>
+        <option value="victory">victory</option>
+        <option value="">(none)</option>
+      </select>
+    </label>
+    <button id="btn-sound" class="on">Sound: on</button>
+    <button id="btn-motion">Reduced motion: off</button>
+  </div>
+
+  <div class="row">
+    <label>Cue <select id="sel-cue"></select></label>
+    <button id="btn-cue">Play cue</button>
+    <button id="btn-all-cues">Play all cues</button>
+    <button id="btn-restart">Destroy + restart</button>
+    <button id="btn-destroy">Destroy</button>
+    <span class="touch">
+      <button id="touch-left" data-bit="1" aria-label="touch left">&larr;</button>
+      <button id="touch-right" data-bit="2" aria-label="touch right">&rarr;</button>
+      <button id="touch-jump" data-bit="4" aria-label="touch jump">A</button>
+    </span>
+  </div>
+
+  <p class="hint">Move with <kbd>&larr;</kbd> <kbd>&rarr;</kbd> (or <kbd>A</kbd>/<kbd>D</kbd>), jump with <kbd>Space</kbd>/<kbd>&uarr;</kbd>/<kbd>W</kbd>.
+    Stomp spinners from above, collect the keycard, avoid the glitch spikes. Click the page once to unlock audio.
+    Query: <kbd>?atlas=placeholder</kbd> forces the generated placeholder atlas, <kbd>?atlas=missing</kbd> simulates a 404.</p>
+
+  <pre id="stats">waiting for Phaser…</pre>
+  <pre id="log"></pre>
+
+  <script src="../../src/BlazorUI/wwwroot/js/phaser.min.js"></script>
+  <script src="../../src/BlazorUI/wwwroot/js/audio.js"></script>
+  <script src="../../src/BlazorUI/wwwroot/js/keyboard.js"></script>
+  <script src="../../src/BlazorUI/wwwroot/js/phaser.interop.js"></script>
+  <script src="harness.js"></script>
+</body>
+</html>

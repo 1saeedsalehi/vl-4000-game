@@ -1,0 +1,160 @@
+@implements IDisposable
+
+<div class="overlay overlay-toasts">
+    <div class="toasts" aria-live="polite" aria-atomic="false">
+        @if (_banner is not null)
+        {
+            <div class="banner-slot">
+                <div class="@(_banner.Message.Kind == MessageKind.Alert ? "banner banner--alert" : "banner")" @key="_banner.Id">
+                    @foreach (var line in _banner.Message.Lines)
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+            </div>
+        }
+        <div class="toast-stack">
+            @foreach (var toast in _toasts)
+            {
+                <div class="toast" @key="toast.Id">
+                    @foreach (var line in toast.Message.Lines)
+                    {
+                        <p>@line</p>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Queue of humorous in-game messages. Toasts stack bottom-centre, banners and
+    /// alerts take the centre slot (one at a time). Each entry auto-hides after
+    /// <see cref="GameMessage.DurationSeconds"/> using a cancellable timer.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    private const int MaxToasts = 3;
+
+    private sealed record Entry(int Id, GameMessage Message, CancellationTokenSource Cts);
+
+    private readonly List<IDisposable> _subscriptions = new();
+    private readonly List<Entry> _toasts = new();
+    private Entry? _banner;
+    private int _nextId;
+
+    protected override void OnInitialized()
+    {
+        _subscriptions.Add(Mediator.Subscribe<MessageShown>(OnMessageShownAsync));
+        _subscriptions.Add(Mediator.Subscribe<PhaseChanged>(OnPhaseChangedAsync));
+    }
+
+    private Task OnMessageShownAsync(MessageShown e)
+    {
+        var entry = new Entry(++_nextId, e.Message, new CancellationTokenSource());
+
+        if (e.Message.Kind == MessageKind.Toast)
+        {
+            while (_toasts.Count >= MaxToasts)
+            {
+                Cancel(_toasts[0]);
+                _toasts.RemoveAt(0);
+            }
+
+            _toasts.Add(entry);
+        }
+        else
+        {
+            if (_banner is not null)
+            {
+                Cancel(_banner);
+            }
+
+            _banner = entry;
+        }
+
+        _ = ExpireAsync(entry);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ExpireAsync(Entry entry)
+    {
+        var seconds = Math.Clamp(entry.Message.DurationSeconds, 0.5, 60);
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(seconds), entry.Cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_banner == entry)
+        {
+            _banner = null;
+        }
+
+        _toasts.Remove(entry);
+        entry.Cts.Dispose();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OnPhaseChangedAsync(PhaseChanged e)
+    {
+        // Leaving gameplay: drop stale messages so they never linger over the menu,
+        // the game-over screen or the victory screen (which carry their own text).
+        if (e.Phase is not (GamePhase.MainMenu or GamePhase.Booting or GamePhase.GameOver or GamePhase.Victory))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_toasts.Count == 0 && _banner is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        ClearAll();
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearAll()
+    {
+        foreach (var toast in _toasts)
+        {
+            Cancel(toast);
+        }
+
+        _toasts.Clear();
+
+        if (_banner is not null)
+        {
+            Cancel(_banner);
+            _banner = null;
+        }
+    }
+
+    private static void Cancel(Entry entry)
+    {
+        try
+        {
+            entry.Cts.Cancel();
+            entry.Cts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already expired.
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _subscriptions.Clear();
+        ClearAll();
+    }
+}

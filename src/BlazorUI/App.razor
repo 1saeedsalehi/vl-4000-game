@@ -1,0 +1,11 @@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+    </Found>
+    <NotFound>
+        <PageTitle>Not found</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p role="alert" class="not-found">404 — THIS STREAM DOES NOT EXIST. <a href="/">BACK TO THE PLATFORM</a></p>
+        </LayoutView>
+    </NotFound>
+</Router>

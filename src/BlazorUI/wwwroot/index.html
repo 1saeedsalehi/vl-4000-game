@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Videoland 4000: Save the Stream — a retro arcade game about one very tired engineer." />
+    <title>VIDEOLAND 4000 — SAVE THE STREAM</title>
+    <base href="/" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="preload" href="assets/fonts/PressStart2P-Regular.ttf" as="font" type="font/ttf" crossorigin />
+    <link href="css/app.css" rel="stylesheet" />
+    <script src="js/phaser.min.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/keyboard.js"></script>
+    <script src="js/phaser.interop.js"></script>
+    <script>
+        // Developer hook, only wired by the host when the page is opened with ?dev.
+        // Lets the browser smoke test jump to later parts of the game deterministically.
+        window.vl4000RegisterDebug = function (dotnetRef) {
+            window.vl4000Debug = function (command) { return dotnetRef.invokeMethod('Debug', String(command)); };
+        };
+    </script>
+</head>
+
+<body>
+    <div id="app">
+        <div class="loading-screen" role="status" aria-live="polite">
+            <p class="loading-title">VIDEOLAND SYSTEMS</p>
+            <p class="loading-text">LOADING CARTRIDGE<span class="blink">_</span></p>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+
+</html>

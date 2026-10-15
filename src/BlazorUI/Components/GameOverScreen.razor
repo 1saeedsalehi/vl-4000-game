@@ -1,0 +1,69 @@
+<section class="panel gameover" role="dialog" aria-modal="true" aria-labelledby="gameover-heading" tabindex="-1" @ref="_panel">
+    <h2 id="gameover-heading" class="panel-title">PRODUCTION INCIDENT</h2>
+    <div class="panel-lines" style="margin-top: calc(var(--px) * 4)">
+        <p>All streams interrupted.</p>
+        <p>Your on-call shift continues.</p>
+    </div>
+    <p class="gameover-score">SCORE: @Fmt6(FinalScore)</p>
+    <p class="text-xs c-light" style="margin-top: calc(var(--px) * 2)">HIGH SCORE: @Fmt6(HighScore)</p>
+    <div class="btn-row">
+        <button type="button" class="btn btn--primary" @onclick="RetryAsync">[R] @RetryLabel</button>
+        <button type="button" class="btn" @onclick="MainMenuAsync">[M] MAIN MENU</button>
+    </div>
+    <p class="panel-footnote">@_footer</p>
+</section>
+
+@code {
+    /// <summary>Game-over screen. Friendly, never punitive: it is only an incident.</summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public int FinalScore { get; set; }
+
+    [Parameter] public int HighScore { get; set; }
+
+    [Parameter] public bool CheckpointAvailable { get; set; }
+
+    private static readonly string[] Footers =
+    {
+        "Root cause: Unknown",
+        "Logs: Insufficient",
+        "Blame: DNS",
+    };
+
+    // Rotates across game overs within the session so repeat incidents stay fresh.
+    private static int s_nextFooter;
+
+    private ElementReference _panel;
+    private string _footer = Footers[0];
+
+    private string RetryLabel => CheckpointAvailable ? "RETRY FROM CHECKPOINT" : "RETRY";
+
+    protected override void OnInitialized()
+    {
+        _footer = Footers[s_nextFooter % Footers.Length];
+        s_nextFooter = (s_nextFooter + 1) % Footers.Length;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private Task RetryAsync() => Mediator.SendAsync(new RetryGame());
+
+    private Task MainMenuAsync() => Mediator.SendAsync(new ReturnToMainMenu());
+
+    private static string Fmt6(int value) => Math.Clamp(value, 0, 999_999).ToString("000000");
+}

@@ -1,0 +1,343 @@
+@page "/ui-preview"
+@implements IDisposable
+@inject IMediator Mediator
+@inject IJSRuntime JS
+
+<PageTitle>UI PREVIEW (DEV) · VIDEOLAND 4000</PageTitle>
+
+@*
+    DEV ONLY. Renders the UI chrome over a dark placeholder instead of the Phaser
+    canvas and acts as a fake session host: it publishes sample events from the
+    toolbar and answers the UI commands (StartGame, TogglePause, ...) with the
+    same phase guards as the real GameSession. Not linked from the game.
+*@
+
+<CascadingValue Value="Mediator" IsFixed="true">
+    <div class="preview">
+        <p class="preview-banner" role="note">DEV PREVIEW &middot; UI CHROME ONLY &middot; NOT THE GAME &middot; /ui-preview</p>
+
+        <div class="stage" id="stage" tabindex="0" aria-label="Preview stage. Focus it and press the game keys." @onkeydown="OnStageKeyDownAsync">
+            <div id="phaser" class="phaser-placeholder" aria-hidden="true"><span>PHASER CANVAS PLACEHOLDER</span></div>
+            <Hud InitialHud="_hud" InitialPhase="_phase" />
+            <Toasts />
+            <GameScreens InitialPhase="_phase" InitialHud="_hud" InitialSettings="_settings" />
+            <TouchControls InitialPhase="_phase" />
+            <CrtOverlay InitialSettings="_settings" />
+            <GlobalHotKeys @ref="_hotKeys" InitialPhase="_phase" />
+        </div>
+
+        <SmallScreenNotice />
+
+        <div class="preview-toolbar" aria-label="Preview controls">
+            <div class="preview-status">
+                <span>PHASE: <b>@_phase.ToString().ToUpperInvariant()</b></span>
+                <span>LAST COMMAND: <b>@_lastCommand</b></span>
+                <span>SOUND: <b>@OnOff(_settings.SoundEnabled)</b></span>
+                <span>CRT: <b>@OnOff(_settings.CrtEnabled)</b></span>
+                <span>REDUCED MOTION: <b>@OnOff(_settings.ReducedMotion)</b></span>
+            </div>
+
+            <div class="preview-group">
+                <span class="preview-group-label">PHASE</span>
+                @foreach (var phase in AllPhases)
+                {
+                    var target = phase;
+                    <button type="button" class="@(target == _phase ? "btn is-active" : "btn")" @onclick="() => JumpToAsync(target)">@target.ToString().ToUpperInvariant()</button>
+                }
+            </div>
+
+            <div class="preview-group">
+                <span class="preview-group-label">SCENARIO</span>
+                <button type="button" class="btn" @onclick="() => GameOverAsync(false)">GAME OVER</button>
+                <button type="button" class="btn" @onclick="() => GameOverAsync(true)">GAME OVER + CHECKPOINT</button>
+                <button type="button" class="btn" @onclick="() => VictoryAsync(false)">VICTORY</button>
+                <button type="button" class="btn" @onclick="() => VictoryAsync(true)">VICTORY + NEW HIGH SCORE</button>
+            </div>
+
+            <div class="preview-group">
+                <span class="preview-group-label">HUD</span>
+                <button type="button" class="btn" @onclick="HudTokenAsync">+ TOKEN</button>
+                <button type="button" class="btn" @onclick="HudDamageAsync">- HEALTH</button>
+                <button type="button" class="btn" @onclick="HudPowerUpsAsync">TOGGLE POWER-UPS</button>
+                <button type="button" class="btn" @onclick="HudBossAsync">TOGGLE BOSS BAR</button>
+            </div>
+
+            <div class="preview-group">
+                <span class="preview-group-label">MESSAGES</span>
+                <button type="button" class="btn" @onclick="ToastAsync">TOAST</button>
+                <button type="button" class="btn" @onclick="BannerAsync">BANNER</button>
+                <button type="button" class="btn" @onclick="AlertAsync">ALERT</button>
+            </div>
+
+            <div class="preview-group">
+                <span class="preview-group-label">SETTINGS</span>
+                <button type="button" class="btn" @onclick="() => Mediator.SendAsync(new ToggleSound())">SOUND</button>
+                <button type="button" class="btn" @onclick="() => Mediator.SendAsync(new ToggleCrt())">CRT</button>
+                <button type="button" class="btn" @onclick="ToggleReducedMotionAsync">REDUCED MOTION</button>
+            </div>
+        </div>
+    </div>
+</CascadingValue>
+
+@code {
+    private static readonly GamePhase[] AllPhases = Enum.GetValues<GamePhase>();
+
+    private static readonly HudState MenuHud = new()
+    {
+        HighScore = 8400,
+        Health = 3,
+        MaxHealth = 3,
+        TokensRequired = 5,
+    };
+
+    private static readonly HudState LevelHud = MenuHud with
+    {
+        Score = 1250,
+        Tokens = 3,
+        Health = 2,
+        Coffee = 2,
+        LevelName = "The Login Dungeon",
+        Objective = "Collect 5 tokens. Unlock the auth terminal. Reach the exit.",
+        Status = "PRIME TIME IN 04:59",
+        CacheBoostSeconds = 7,
+        FreezeSeconds = 3,
+        RollbackArmed = true,
+    };
+
+    private static readonly HudState BossHud = LevelHud with
+    {
+        Score = 4320,
+        Tokens = 5,
+        LevelName = "The Boss Arena",
+        Objective = "Repair identity, content and streaming.",
+        Status = "SERVICES 1 / 3",
+        BossActive = true,
+        BossHealth = 7,
+        BossMaxHealth = 12,
+        BossPhase = 2,
+        BossDiagnostic = "DIAG: SPINNER STUCK AT 99%",
+        CacheBoostSeconds = 0,
+        FreezeSeconds = 0,
+        RollbackArmed = false,
+    };
+
+    private readonly List<IDisposable> _subscriptions = new();
+    private GlobalHotKeys? _hotKeys;
+    private GamePhase _phase = GamePhase.Booting;
+    private GamePhase _phaseBeforePause = GamePhase.Playing;
+    private GameSettings _settings = GameSettings.Default;
+    private HudState _hud = MenuHud;
+    private string _lastCommand = "(none)";
+
+    protected override void OnInitialized()
+    {
+        // Fake session host: answer UI commands with the real phase guards.
+        _subscriptions.Add(Mediator.Subscribe<BootCompleted>(_ => OnCommandAsync("BootCompleted", GamePhase.Booting, GamePhase.MainMenu)));
+        _subscriptions.Add(Mediator.Subscribe<StartGame>(_ => OnCommandAsync("StartGame", GamePhase.MainMenu, GamePhase.LevelIntro)));
+        _subscriptions.Add(Mediator.Subscribe<SkipIntro>(_ => OnCommandAsync("SkipIntro", GamePhase.LevelIntro, GamePhase.Playing)));
+        _subscriptions.Add(Mediator.Subscribe<RetryGame>(_ => OnCommandAsync("RetryGame", GamePhase.GameOver, GamePhase.Playing)));
+        _subscriptions.Add(Mediator.Subscribe<TogglePause>(_ => OnTogglePauseAsync()));
+        _subscriptions.Add(Mediator.Subscribe<ReturnToMainMenu>(_ => OnReturnToMenuAsync()));
+        _subscriptions.Add(Mediator.Subscribe<ToggleSound>(_ => OnSettingsAsync("ToggleSound", _settings with { SoundEnabled = !_settings.SoundEnabled })));
+        _subscriptions.Add(Mediator.Subscribe<ToggleCrt>(_ => OnSettingsAsync("ToggleCrt", _settings with { CrtEnabled = !_settings.CrtEnabled })));
+    }
+
+    private async Task OnCommandAsync(string name, GamePhase requiredPhase, GamePhase next)
+    {
+        if (_phase != requiredPhase)
+        {
+            _lastCommand = $"{name} (ignored in {_phase})";
+            StateHasChanged();
+            return;
+        }
+
+        _lastCommand = name;
+        await SetPhaseAsync(next);
+    }
+
+    private async Task OnTogglePauseAsync()
+    {
+        _lastCommand = "TogglePause";
+        switch (_phase)
+        {
+            case GamePhase.Playing:
+            case GamePhase.BossEncounter:
+                _phaseBeforePause = _phase;
+                await SetPhaseAsync(GamePhase.Paused);
+                break;
+            case GamePhase.Paused:
+                await SetPhaseAsync(_phaseBeforePause);
+                break;
+            default:
+                _lastCommand = $"TogglePause (ignored in {_phase})";
+                StateHasChanged();
+                break;
+        }
+    }
+
+    private async Task OnReturnToMenuAsync()
+    {
+        if (_phase is not (GamePhase.Paused or GamePhase.GameOver or GamePhase.Victory))
+        {
+            _lastCommand = $"ReturnToMainMenu (ignored in {_phase})";
+            StateHasChanged();
+            return;
+        }
+
+        _lastCommand = "ReturnToMainMenu";
+        await SetPhaseAsync(GamePhase.MainMenu);
+    }
+
+    private async Task OnSettingsAsync(string name, GameSettings settings)
+    {
+        _lastCommand = name;
+        _settings = settings;
+        await Mediator.PublishAsync(new SettingsChanged(settings));
+        StateHasChanged();
+    }
+
+    private Task ToggleReducedMotionAsync() =>
+        OnSettingsAsync("(preview) reduced motion", _settings with { ReducedMotion = !_settings.ReducedMotion });
+
+    private async Task SetPhaseAsync(GamePhase next)
+    {
+        var previous = _phase;
+
+        switch (next)
+        {
+            case GamePhase.MainMenu:
+                await PublishHudAsync(MenuHud with { HighScore = Math.Max(MenuHud.HighScore, _hud.Score) });
+                break;
+            case GamePhase.LevelIntro:
+                await PublishHudAsync(LevelHud);
+                break;
+            case GamePhase.Playing when previous != GamePhase.Paused:
+                await PublishHudAsync(_hud with { Health = _hud.MaxHealth, LevelName = LevelHud.LevelName, Objective = LevelHud.Objective, BossActive = false });
+                break;
+            case GamePhase.BossEncounter when previous != GamePhase.Paused:
+                await PublishHudAsync(BossHud);
+                break;
+        }
+
+        _phase = next;
+        await Mediator.PublishAsync(new PhaseChanged(next, previous));
+        StateHasChanged();
+    }
+
+    private Task JumpToAsync(GamePhase phase) => phase switch
+    {
+        GamePhase.GameOver => GameOverAsync(false),
+        GamePhase.Victory => VictoryAsync(false),
+        _ => SetPhaseAsync(phase),
+    };
+
+    private async Task GameOverAsync(bool checkpointAvailable)
+    {
+        if (_phase is not (GamePhase.Playing or GamePhase.BossEncounter or GamePhase.Paused))
+        {
+            await PublishHudAsync(LevelHud with { Score = 2450, Health = 0 });
+        }
+
+        await Mediator.PublishAsync(new GameEnded(_hud.Score, Math.Max(_hud.Score, _hud.HighScore), checkpointAvailable));
+        await SetPhaseAsync(GamePhase.GameOver);
+    }
+
+    private async Task VictoryAsync(bool newHighScore)
+    {
+        var stats = new VictoryStats(
+            ViewersOnline: 1_284_502,
+            IncidentsResolved: 42,
+            CoffeeConsumed: 17,
+            FinalScore: 12_340,
+            HighScore: newHighScore ? 12_340 : 20_000,
+            IsNewHighScore: newHighScore);
+
+        await PublishHudAsync(_hud with { Score = stats.FinalScore, HighScore = stats.HighScore });
+        await Mediator.PublishAsync(new VictoryAchieved(stats));
+        await SetPhaseAsync(GamePhase.Victory);
+    }
+
+    private Task HudTokenAsync() => PublishHudAsync(_hud with
+    {
+        Tokens = Math.Min(_hud.Tokens + 1, _hud.TokensRequired),
+        Score = _hud.Score + 100,
+        Status = _hud.Tokens + 1 >= _hud.TokensRequired ? "ALL TOKENS COLLECTED" : _hud.Status,
+    });
+
+    private Task HudDamageAsync() => PublishHudAsync(_hud with { Health = Math.Max(0, _hud.Health - 1) });
+
+    private Task HudPowerUpsAsync()
+    {
+        var on = _hud.CacheBoostSeconds > 0 || _hud.FreezeSeconds > 0 || _hud.RollbackArmed;
+        return PublishHudAsync(_hud with
+        {
+            CacheBoostSeconds = on ? 0 : 7,
+            FreezeSeconds = on ? 0 : 3,
+            RollbackArmed = !on,
+        });
+    }
+
+    private Task HudBossAsync() => PublishHudAsync(_hud.BossActive
+        ? _hud with { BossActive = false }
+        : _hud with { BossActive = true, BossHealth = 7, BossMaxHealth = 12, BossPhase = 2, BossDiagnostic = BossHud.BossDiagnostic });
+
+    private Task ToastAsync() => Mediator.PublishAsync(new MessageShown(
+        GameMessage.Toast(3, "+100 TOKEN ACCEPTED. SESSION EXTENDED.")));
+
+    private Task BannerAsync() => Mediator.PublishAsync(new MessageShown(
+        GameMessage.Banner(4, "IDENTITY SERVICE RESTORED", "Users can log in again.", "Nobody noticed. Perfect.")));
+
+    private Task AlertAsync() => Mediator.PublishAsync(new MessageShown(
+        GameMessage.Alert(3, "WARNING: EXPIRED TOKEN DETECTED", "Re-authenticate at the terminal.")));
+
+    private async Task PublishHudAsync(HudState hud)
+    {
+        _hud = hud;
+        await Mediator.PublishAsync(new HudChanged(hud));
+        StateHasChanged();
+    }
+
+    // Fallback for when keyboard.js is not loaded: forwards one-shot keys to
+    // GlobalHotKeys, except Enter/Space while a button has focus (the button's
+    // own click handles those). When keyboard.js has captured the keys, it
+    // already forwards them, so this must stay out of the way.
+    private async Task OnStageKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Repeat || _hotKeys is null || _hotKeys.IsCapturing)
+        {
+            return;
+        }
+
+        if ((e.Code is "Enter" or "NumpadEnter" or "Space") && await IsButtonFocusedAsync())
+        {
+            return;
+        }
+
+        await _hotKeys.OnKeyDownAsync(e.Code);
+    }
+
+    private async Task<bool> IsButtonFocusedAsync()
+    {
+        try
+        {
+            var tag = await JS.InvokeAsync<string?>("eval", "document.activeElement ? document.activeElement.tagName : ''");
+            return string.Equals(tag, "BUTTON", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JSException)
+        {
+            return false;
+        }
+    }
+
+    private static string OnOff(bool value) => value ? "ON" : "OFF";
+
+    public void Dispose()
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _subscriptions.Clear();
+    }
+}

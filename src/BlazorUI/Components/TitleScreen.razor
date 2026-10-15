@@ -1,0 +1,95 @@
+<section class="panel title" aria-labelledby="title-heading" tabindex="-1" @ref="_panel">
+    <h1 id="title-heading" class="title-logo">
+        <span class="title-logo-main glow-magenta">VIDEOLAND 4000</span>
+        <span class="title-logo-sub">SAVE THE STREAM</span>
+    </h1>
+
+    <p class="title-tagline">
+        <span>ONE PLATFORM.</span>
+        <span>A MILLION VIEWERS.</span>
+        <span>ONE VERY TIRED ENGINEER.</span>
+    </p>
+
+    <button type="button" class="btn btn--primary title-start" @onclick="StartAsync"><span class="blink">[ PRESS START ]</span></button>
+
+    <p class="title-highscore">HIGH SCORE: @FormatScore(HighScore)</p>
+
+    <table class="controls">
+        <caption>CONTROLS</caption>
+        <tbody>
+            <tr>
+                <td class="key">&larr; &rarr; or A D</td>
+                <td class="action">MOVE</td>
+                <td class="key">SPACE / &uarr; / W</td>
+                <td class="action">JUMP</td>
+            </tr>
+            <tr>
+                <td class="key">E</td>
+                <td class="action">INTERACT</td>
+                <td class="key">P / ESC</td>
+                <td class="action">PAUSE</td>
+            </tr>
+            <tr>
+                <td class="key">R</td>
+                <td class="action">RETRY</td>
+                <td class="key">M</td>
+                <td class="action">MENU</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="btn-row title-toggles">
+        <button type="button" class="btn btn--small" aria-pressed="@Pressed(Settings.SoundEnabled)" @onclick="ToggleSoundAsync">
+            SOUND: @OnOff(Settings.SoundEnabled)
+        </button>
+        <button type="button" class="btn btn--small" aria-pressed="@Pressed(Settings.CrtEnabled)" @onclick="ToggleCrtAsync">
+            CRT: @OnOff(Settings.CrtEnabled)
+        </button>
+    </div>
+
+    <p class="title-credit">Inspired by GameATron4000</p>
+</section>
+
+@code {
+    /// <summary>
+    /// Main menu. The attract scene renders in the canvas behind it, so the panel
+    /// stays semi-transparent. "[ PRESS START ]" is a real button (click → StartGame);
+    /// Enter/Space arrive via <see cref="GlobalHotKeys"/>.
+    /// </summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public int HighScore { get; set; }
+
+    [Parameter] public GameSettings Settings { get; set; } = GameSettings.Default;
+
+    private ElementReference _panel;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private Task StartAsync() => Mediator.SendAsync(new StartGame());
+
+    private Task ToggleSoundAsync() => Mediator.SendAsync(new ToggleSound());
+
+    private Task ToggleCrtAsync() => Mediator.SendAsync(new ToggleCrt());
+
+    internal static string FormatScore(int score) => Math.Clamp(score, 0, 999_999).ToString("000000");
+
+    private static string OnOff(bool value) => value ? "ON" : "OFF";
+
+    private static string Pressed(bool value) => value ? "true" : "false";
+}

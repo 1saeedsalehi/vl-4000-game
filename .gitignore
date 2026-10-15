@@ -1,0 +1,17 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+# Node
+node_modules/
+tests/e2e/output/
+# OS
+.DS_Store
+Thumbs.db
+# Tools
+tools/atlas/__pycache__/
+tools/atlas/preview/
+tools/atlas/preview*/

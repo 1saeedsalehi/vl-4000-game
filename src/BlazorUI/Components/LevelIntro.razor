@@ -1,0 +1,69 @@
+<section class="panel panel--narrow intro" role="dialog" aria-modal="true" aria-labelledby="intro-heading" tabindex="-1" @ref="_panel">
+    <p class="intro-level">LEVEL @LevelNumber</p>
+    <h2 id="intro-heading" class="intro-name">@DisplayName</h2>
+    <div class="panel-rule" aria-hidden="true"></div>
+    <p class="intro-label">OBJECTIVE</p>
+    <div class="panel-lines intro-objective">
+        @foreach (var line in ObjectiveLines)
+        {
+            <p>@line</p>
+        }
+    </div>
+    <div class="intro-actions">
+        <button type="button" class="btn btn--primary" @onclick="SkipAsync">PRESS START TO CONTINUE</button>
+    </div>
+</section>
+
+@code {
+    /// <summary>Level introduction card; the host auto-advances after a few seconds.</summary>
+    [CascadingParameter] public IMediator Mediator { get; set; } = default!;
+
+    [Parameter] public int LevelNumber { get; set; } = 1;
+
+    [Parameter] public string LevelName { get; set; } = string.Empty;
+
+    [Parameter] public string Objective { get; set; } = string.Empty;
+
+    private ElementReference _panel;
+
+    private string DisplayName => string.IsNullOrWhiteSpace(LevelName) ? "UNNAMED DEPLOYMENT" : LevelName.ToUpperInvariant();
+
+    private IEnumerable<string> ObjectiveLines
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Objective))
+            {
+                return new[] { "Keep the stream alive." };
+            }
+
+            // Split "Do this. Then that." / multi-line objectives into separate lines.
+            var parts = System.Text.RegularExpressions.Regex
+                .Split(Objective.Trim(), @"(?<=\.)\s+|\r?\n|\s\|\s")
+                .Select(p => p.Trim())
+                .Where(p => p.Length > 0)
+                .ToArray();
+
+            return parts.Length == 0 ? new[] { Objective } : parts;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            await _panel.FocusAsync();
+        }
+        catch (JSException)
+        {
+            // Focus is a nicety only.
+        }
+    }
+
+    private Task SkipAsync() => Mediator.SendAsync(new SkipIntro());
+}

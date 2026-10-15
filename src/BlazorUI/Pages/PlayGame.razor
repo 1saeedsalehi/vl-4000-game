@@ -1,0 +1,288 @@
+@page "/"
+@page "/play/{DiskNumber:int}"
+@implements IAsyncDisposable
+@inject IGameManifestRepository _manifestRepository
+@inject ILevelRepository _levelRepository
+@inject IHighScoreRepository _highScoreRepository
+@inject GameSettingsService _settings
+@inject IMediator _mediator
+@inject IJSRuntime _jsRuntime
+@inject NavigationManager _navigation
+@inject ILogger<PlayGame> _logger
+
+<PageTitle>VIDEOLAND 4000 — SAVE THE STREAM</PageTitle>
+
+<CascadingValue Value="@_mediator">
+    <div class="stage" id="stage">
+        <div id="phaser" aria-label="Game canvas" role="img"></div>
+
+        @if (_error is not null)
+        {
+            <div class="overlay overlay-screen">
+                <section class="panel panel--narrow" role="alert">
+                    <h2 class="panel-title">CARTRIDGE ERROR</h2>
+                    <p>@_error</p>
+                    <button type="button" class="btn btn--primary" @onclick="ReloadAsync">RETRY LOAD</button>
+                </section>
+            </div>
+        }
+        else
+        {
+            <Hud />
+            <Toasts />
+            <GameScreens />
+            <TouchControls />
+            <GlobalHotKeys />
+        }
+
+        <CrtOverlay />
+    </div>
+    <SmallScreenNotice />
+</CascadingValue>
+
+@code {
+    private const int LogicalWidth = PhysicsConfig.ViewportWidth;
+    private const int LogicalHeight = PhysicsConfig.ViewportHeight;
+
+    private readonly List<IDisposable> _subscriptions = new();
+    private PhaserRenderer? _renderer;
+    private GameSession? _session;
+    private GameManifest? _manifest;
+    private string? _error;
+    private bool _started;
+    private bool _disposed;
+    private bool _bootCompletedPending;
+
+    [Parameter]
+    public int DiskNumber { get; set; } = 1;
+
+    protected override void OnInitialized()
+    {
+        _subscriptions.Add(_mediator.Subscribe<BootCompleted>(OnBootCompletedAsync));
+        _subscriptions.Add(_mediator.Subscribe<StartGame>(_ => Transition(s => s.StartNewGame(), SoundCue.Start)));
+        _subscriptions.Add(_mediator.Subscribe<SkipIntro>(_ => Transition(s => s.SkipIntro(), SoundCue.MenuSelect)));
+        _subscriptions.Add(_mediator.Subscribe<TogglePause>(_ => Transition(s => s.TogglePause(), SoundCue.Pause)));
+        _subscriptions.Add(_mediator.Subscribe<RetryGame>(_ => Transition(s => s.Retry(), SoundCue.MenuSelect)));
+        _subscriptions.Add(_mediator.Subscribe<ReturnToMainMenu>(_ => Transition(s => s.ReturnToMenu(), SoundCue.MenuSelect)));
+        _subscriptions.Add(_mediator.Subscribe<ToggleSound>(OnToggleSoundAsync));
+        _subscriptions.Add(_mediator.Subscribe<ToggleCrt>(_ => _settings.ToggleCrtAsync()));
+        _subscriptions.Add(_mediator.Subscribe<SettingsChanged>(OnSettingsChangedAsync));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started)
+        {
+            return;
+        }
+
+        _started = true;
+        await LoadAndStartAsync();
+    }
+
+    /// <summary>The boot screen may finish before the content has loaded; remember it until the session exists.</summary>
+    private Task OnBootCompletedAsync(BootCompleted _)
+    {
+        if (_session is null)
+        {
+            _bootCompletedPending = true;
+            return Task.CompletedTask;
+        }
+
+        return Transition(s => s.CompleteBoot());
+    }
+
+    private async Task LoadAndStartAsync()
+    {
+        try
+        {
+            // A retry after a failed load must not leave an earlier renderer or session behind.
+            if (_renderer is not null)
+            {
+                await _renderer.DisposeAsync();
+                _renderer = null;
+            }
+
+            DetachSession();
+
+            var diskNumber = DiskNumber <= 0 ? 1 : DiskNumber;
+            _manifest = await _manifestRepository.TryLoadGameManifestAsync(diskNumber)
+                ?? throw new InvalidOperationException($"Game disk {diskNumber} was not found.");
+
+            var levelPath = _manifest.Spec.Levels.FirstOrDefault()
+                ?? throw new InvalidOperationException("The game manifest lists no levels.");
+            var level = await _levelRepository.LoadLevelAsync(_manifest, levelPath);
+            var arena = await _levelRepository.LoadLevelAsync(_manifest, _manifest.Spec.BossArena);
+
+            var highScore = await _highScoreRepository.LoadAsync();
+            var prefersReducedMotion = false;
+            try
+            {
+                prefersReducedMotion = await _jsRuntime.InvokeAsync<bool>(PhaserConstants.Functions.PrefersReducedMotion);
+            }
+            catch (JSException)
+            {
+                // Optional feature detection.
+            }
+
+            await _settings.LoadAsync(prefersReducedMotion);
+
+            if (_disposed)
+            {
+                return;
+            }
+
+            var session = new GameSession(new GameContent(_manifest, level, arena), highScore);
+            session.PhaseChanged += OnPhaseChanged;
+            session.HudChanged += hud => Fire(_mediator.PublishAsync(new HudChanged(hud)));
+            session.MessageShown += message => Fire(_mediator.PublishAsync(new MessageShown(message)));
+            session.VictoryAchieved += stats => Fire(_mediator.PublishAsync(new VictoryAchieved(stats)));
+            session.GameEnded += (score, highScore, checkpoint) => Fire(_mediator.PublishAsync(new GameEnded(score, highScore, checkpoint)));
+            session.HighScoreChanged += value => Fire(_highScoreRepository.SaveAsync(value));
+            _session = session;
+
+            if (_bootCompletedPending)
+            {
+                // The boot animation already finished while the content was loading.
+                _bootCompletedPending = false;
+                session.CompleteBoot();
+            }
+
+            var atlas = _manifest.Spec.Atlasses[Frames.AtlasKey];
+            var renderer = new PhaserRenderer(_jsRuntime, LogicalWidth, LogicalHeight);
+            _renderer = renderer;
+            var devMode = new Uri(_navigation.Uri).Query.Contains("dev", StringComparison.OrdinalIgnoreCase);
+            await renderer.StartAsync(
+                "phaser",
+                _manifest.BasePath + atlas.TextureUrl,
+                _manifest.BasePath + atlas.AtlasUrl,
+                Tick,
+                devMode ? command => _session?.ApplyDebugCommand(command) ?? "no session" : null);
+
+            if (_disposed)
+            {
+                // The page went away while Phaser was starting.
+                await renderer.DisposeAsync();
+                _renderer = null;
+                return;
+            }
+
+            await renderer.SetSoundEnabledAsync(_settings.Current.SoundEnabled);
+            await renderer.SetReducedMotionAsync(_settings.Current.ReducedMotion);
+
+            await _mediator.PublishAsync(new ContentLoaded(_manifest));
+            await _mediator.PublishAsync(new HudChanged(session.Hud));
+            await _mediator.PublishAsync(new PhaseChanged(session.Phase, session.Phase));
+        }
+        catch (Exception ex)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _logger.LogError(ex, "Failed to start the game");
+            _error = ex.Message;
+            await _mediator.PublishAsync(new ContentFailed(ex.Message));
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Called by Phaser once per rendered frame (synchronous JS → .NET).</summary>
+    private FrameSnapshot Tick(double deltaMs, InputButtons held) =>
+        _session!.Tick(deltaMs / 1000.0, held);
+
+    private Task Transition(Func<GameSession, bool> transition, string? sound = null)
+    {
+        if (_session is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (transition(_session) && sound is not null && _renderer is not null)
+        {
+            Fire(_renderer.PlaySoundAsync(sound).AsTask());
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void DetachSession()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        _session.PhaseChanged -= OnPhaseChanged;
+        _session = null;
+    }
+
+    private void OnPhaseChanged(GamePhase phase, GamePhase previous)
+    {
+        Fire(_mediator.PublishAsync(new PhaseChanged(phase, previous)));
+
+        if (_renderer is not null)
+        {
+            Fire(_renderer.SetPausedAsync(phase == GamePhase.Paused).AsTask());
+        }
+
+        if (phase == GamePhase.GameOver && _renderer is not null)
+        {
+            Fire(_renderer.PlaySoundAsync(SoundCue.GameOver).AsTask());
+        }
+        else if (phase == GamePhase.Victory && _renderer is not null)
+        {
+            Fire(_renderer.PlaySoundAsync(SoundCue.Victory).AsTask());
+        }
+    }
+
+    private async Task OnToggleSoundAsync(ToggleSound _)
+    {
+        await _settings.ToggleSoundAsync();
+    }
+
+    private async Task OnSettingsChangedAsync(SettingsChanged e)
+    {
+        if (_renderer is not null)
+        {
+            await _renderer.SetSoundEnabledAsync(e.Settings.SoundEnabled);
+            await _renderer.SetReducedMotionAsync(e.Settings.ReducedMotion);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _error = null;
+        StateHasChanged();
+        await LoadAndStartAsync();
+    }
+
+    /// <summary>Fire-and-forget for notifications raised inside the synchronous frame tick.</summary>
+    private void Fire(Task task)
+    {
+        _ = task.ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled error in game notification"),
+            TaskContinuationOptions.OnlyOnFaulted);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+
+        _subscriptions.Clear();
+
+        if (_renderer is not null)
+        {
+            await _renderer.DisposeAsync();
+            _renderer = null;
+        }
+
+        DetachSession();
+    }
+}
