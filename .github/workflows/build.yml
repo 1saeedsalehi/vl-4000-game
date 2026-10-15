@@ -67,6 +67,15 @@ jobs:
         if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
         run: echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets are not set; skipping the Cloudflare Pages deployment (see README → Deploy)."
 
+      - name: Ensure the Pages project exists
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: |
+          if npx --yes wrangler@4 pages project list 2>/dev/null | grep -q "vl-4000-game"; then
+            echo "Pages project vl-4000-game already exists."
+          else
+            npx --yes wrangler@4 pages project create vl-4000-game --production-branch main
+          fi
+
       - name: Deploy
         if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         uses: cloudflare/wrangler-action@v3
