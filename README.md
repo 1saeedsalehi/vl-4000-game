@@ -2,7 +2,7 @@
 
 > *One platform. A million viewers. One very tired engineer.*
 
-**Play it:** <https://vl-4000-game.pages.dev> · Source: <https://github.com/1saeedsalehi/vl-4000-game>
+**Play it:** [videoland-game.1saeed.dev](https://videoland-game.1saeed.dev)
 
 A retro 1980s arcade platformer for the browser. It is Friday evening in the Netherlands, prime time
 is approaching, and the (entirely fictional) streaming platform is falling apart: expired tokens are
